@@ -292,9 +292,144 @@ const App: React.FC = () => {
 
   const runAiAnalysis = async () => {
     setIsAnalyzing(true);
-    const result = await getScheduleOptimizationInsights(shifts, employees);
-    setAiAnalysis(result);
+    
+    // Fast local analysis - instant results
+    const analysis = generateFastPerformanceReport(shifts, employees);
+    setAiAnalysis(analysis);
     setIsAnalyzing(false);
+  };
+
+  const generateFastPerformanceReport = (shifts: Shift[], employees: Employee[]): string => {
+    const assignedShifts = shifts.filter(s => s.assignedEmployeeId);
+    const unassignedShifts = shifts.filter(s => !s.assignedEmployeeId);
+    const totalShifts = shifts.length;
+    const coveragePercent = Math.round((assignedShifts.length / totalShifts) * 100);
+    
+    // Calculate total cost and sales
+    let totalCost = 0;
+    let totalTargetSales = 0;
+    let totalExpectedSales = 0;
+    const shiftHours = 6; // 6 hours per shift
+    
+    assignedShifts.forEach(shift => {
+      const employee = employees.find(e => e.id === shift.assignedEmployeeId);
+      if (employee) {
+        totalCost += employee.hourlyRate * shiftHours;
+        totalTargetSales += shift.targetSales;
+        // Expected sales based on productivity (productivity score as percentage of target)
+        totalExpectedSales += shift.targetSales * (employee.productivityScore / 100);
+      }
+    });
+    
+    const efficiencyRatio = totalCost > 0 ? totalTargetSales / totalCost : 0;
+    const expectedEfficiencyRatio = totalCost > 0 ? totalExpectedSales / totalCost : 0;
+    
+    // Analyze employee assignments
+    const employeeShiftCounts: Record<string, { count: number; employee: Employee }> = {};
+    const highValueShifts = shifts.filter(s => s.targetSales >= 3000);
+    const highValueAssigned = highValueShifts.filter(s => s.assignedEmployeeId);
+    
+    assignedShifts.forEach(shift => {
+      const employee = employees.find(e => e.id === shift.assignedEmployeeId);
+      if (employee) {
+        if (!employeeShiftCounts[employee.id]) {
+          employeeShiftCounts[employee.id] = { count: 0, employee };
+        }
+        employeeShiftCounts[employee.id].count++;
+      }
+    });
+    
+    // Find best and worst assignments
+    const sortedByProductivity = [...assignedShifts]
+      .map(s => ({
+        shift: s,
+        employee: employees.find(e => e.id === s.assignedEmployeeId),
+        matchScore: (employees.find(e => e.id === s.assignedEmployeeId)?.productivityScore || 0) / s.targetSales
+      }))
+      .filter(s => s.employee)
+      .sort((a, b) => (b.employee?.productivityScore || 0) - (a.employee?.productivityScore || 0));
+    
+    const bestMatches = sortedByProductivity.slice(0, 3);
+    const worstMatches = sortedByProductivity.slice(-3).reverse();
+    
+    // Cost optimization opportunities
+    const avgHourlyRate = assignedShifts.length > 0 
+      ? totalCost / (assignedShifts.length * shiftHours)
+      : 0;
+    const highCostEmployees = Object.values(employeeShiftCounts)
+      .filter(e => e.employee.hourlyRate > avgHourlyRate * 1.2)
+      .sort((a, b) => b.employee.hourlyRate - a.employee.hourlyRate);
+    
+    // Build report
+    let report = `# 📊 דוח ביצועים - ניתוח מיידי\n\n`;
+    
+    report += `## 1️⃣ ניתוח כיסוי\n`;
+    report += `- **כיסוי משמרות:** ${coveragePercent}% (${assignedShifts.length}/${totalShifts})\n`;
+    report += `- **משמרות לא מאוישות:** ${unassignedShifts.length}\n`;
+    if (unassignedShifts.length > 0) {
+      report += `- **⚠️ משמרות שדורשות שיבוץ:** ${unassignedShifts.map(s => `${s.day} ${s.type}`).join(', ')}\n`;
+    }
+    report += `- **כיסוי משמרות ערך גבוה:** ${Math.round((highValueAssigned.length / highValueShifts.length) * 100)}% (${highValueAssigned.length}/${highValueShifts.length})\n\n`;
+    
+    report += `## 2️⃣ אופטימיזציית מכירות\n`;
+    report += `- **יעד מכירות כולל:** $${totalTargetSales.toLocaleString()}\n`;
+    report += `- **מכירות צפויות (על בסיס תפוקה):** $${Math.round(totalExpectedSales).toLocaleString()}\n`;
+    report += `- **יחס יעילות (מכירות/עלות):** ${efficiencyRatio.toFixed(2)}\n`;
+    report += `- **יחס יעילות צפוי:** ${expectedEfficiencyRatio.toFixed(2)}\n\n`;
+    
+    if (bestMatches.length > 0) {
+      report += `**✅ השיבוצים הטובים ביותר:**\n`;
+      bestMatches.forEach((match, i) => {
+        report += `${i + 1}. ${match.employee?.name} (תפוקה: ${match.employee?.productivityScore}%) → ${match.shift.day} ${match.shift.type} (יעד: $${match.shift.targetSales.toLocaleString()})\n`;
+      });
+      report += `\n`;
+    }
+    
+    report += `## 3️⃣ ניהול עלויות\n`;
+    report += `- **עלות כוללת:** $${totalCost.toLocaleString()}\n`;
+    report += `- **עלות ממוצעת לשעה:** $${avgHourlyRate.toFixed(2)}\n`;
+    report += `- **עלות למשמרת ממוצעת:** $${(totalCost / assignedShifts.length || 0).toFixed(2)}\n\n`;
+    
+    if (highCostEmployees.length > 0) {
+      report += `**💰 הזדמנויות לחיסכון:**\n`;
+      highCostEmployees.slice(0, 3).forEach(emp => {
+        const savings = (emp.employee.hourlyRate - avgHourlyRate) * emp.count * shiftHours;
+        report += `- ${emp.employee.name}: $${emp.employee.hourlyRate}/שעה (${emp.count} משמרות) - חיסכון פוטנציאלי: $${Math.round(savings)}\n`;
+      });
+      report += `\n`;
+    }
+    
+    report += `## 4️⃣ סיכום והמלצות\n`;
+    const recommendations: string[] = [];
+    
+    if (unassignedShifts.length > 0) {
+      recommendations.push(`שיבוץ ${unassignedShifts.length} משמרות לא מאוישות`);
+    }
+    
+    if (coveragePercent < 80) {
+      recommendations.push(`שיפור כיסוי המשמרות (כרגע ${coveragePercent}%)`);
+    }
+    
+    if (efficiencyRatio < 8) {
+      recommendations.push(`שיפור יחס יעילות (כרגע ${efficiencyRatio.toFixed(2)})`);
+    }
+    
+    if (highCostEmployees.length > 0) {
+      recommendations.push(`בחינת שיבוץ עובדים בעלי עלות גבוהה למשמרות ערך גבוה בלבד`);
+    }
+    
+    if (recommendations.length === 0) {
+      recommendations.push(`הסידור נראה מאוזן ויעיל!`);
+    }
+    
+    recommendations.forEach((rec, i) => {
+      report += `${i + 1}. ${rec}\n`;
+    });
+    
+    report += `\n---\n`;
+    report += `*דוח נוצר ב-${new Date().toLocaleString('he-IL')}*\n`;
+    
+    return report;
   };
 
   const requestSmartSuggestion = async (shift: Shift) => {
