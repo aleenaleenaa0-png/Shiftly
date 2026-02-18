@@ -104,8 +104,7 @@ namespace Backend
                                                 Email TEXT(200) NOT NULL,
                                                 FullName TEXT(100) NOT NULL,
                                                 Password TEXT(200) NOT NULL,
-                                                StoreId INTEGER NOT NULL,
-                                                Role TEXT(20) NOT NULL
+                                                StoreId INTEGER NOT NULL
                                             )
                                         ");
                                         Console.WriteLine("✓ Created Users table manually");

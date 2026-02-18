@@ -110,8 +110,29 @@ namespace Backend.Controllers
                     }
 
                     // Query user without Include first to avoid relationship issues
-                    user = await _db.Users
-                        .FirstOrDefaultAsync(u => u.Email == loginDto.Email && u.Password == loginDto.Password);
+                    Console.WriteLine($"Attempting to query Users table for email: {loginDto.Email}");
+                    try
+                    {
+                        user = await _db.Users
+                            .FirstOrDefaultAsync(u => u.Email == loginDto.Email && u.Password == loginDto.Password);
+                        Console.WriteLine($"Query completed. User found: {user != null}");
+                    }
+                    catch (Exception queryEx)
+                    {
+                        Console.WriteLine($"⚠ Error querying Users table: {queryEx.Message}");
+                        Console.WriteLine($"⚠ Query exception type: {queryEx.GetType().Name}");
+                        if (queryEx.InnerException != null)
+                        {
+                            Console.WriteLine($"⚠ Inner exception: {queryEx.InnerException.Message}");
+                        }
+                        // Check if it's a schema issue (Role column might exist)
+                        if (queryEx.Message.Contains("Role") || queryEx.Message.Contains("unknown field"))
+                        {
+                            Console.WriteLine("⚠ Possible schema mismatch - Users table may have Role column that model doesn't have");
+                            Console.WriteLine("⚠ Try dropping and recreating the Users table, or remove the Role column manually");
+                        }
+                        throw; // Re-throw to be caught by outer catch
+                    }
                     
                     // If found, get store name separately (safely)
                     if (user != null)
@@ -145,6 +166,69 @@ namespace Backend.Controllers
                 {
                     Console.WriteLine("⚠ Invalid user ID detected, treating as null");
                     user = null;
+                }
+
+                // If manager credentials are used but user doesn't exist, create it automatically
+                if (user == null && loginDto.Email == "manager@shiftly.com" && loginDto.Password == "manager123")
+                {
+                    Console.WriteLine("Manager credentials detected but user doesn't exist. Creating manager user...");
+                    try
+                    {
+                        // Get or create a store
+                        var firstStore = await _db.Stores.FirstOrDefaultAsync();
+                        int storeId;
+                        
+                        if (firstStore == null)
+                        {
+                            // Create a default store
+                            var defaultStore = new Store
+                            {
+                                Name = "Default Store",
+                                Location = "Default Location",
+                                HourlySalesTarget = 3000,
+                                HourlyLaborBudget = 300
+                            };
+                            _db.Stores.Add(defaultStore);
+                            await _db.SaveChangesAsync();
+                            storeId = defaultStore.StoreId;
+                            Console.WriteLine($"✓ Created default store (ID: {storeId}) for manager");
+                        }
+                        else
+                        {
+                            storeId = firstStore.StoreId;
+                        }
+
+                        // Create manager user
+                        user = new User
+                        {
+                            Email = "manager@shiftly.com",
+                            FullName = "Default Manager",
+                            Password = "manager123",
+                            StoreId = storeId
+                        };
+
+                        _db.Users.Add(user);
+                        await _db.SaveChangesAsync();
+                        Console.WriteLine($"✓ Created manager user - Email: {user.Email}, ID: {user.UserId}");
+                        
+                        // Load store for the user
+                        try
+                        {
+                            var store = await _db.Stores.FindAsync(user.StoreId);
+                            user.Store = store;
+                        }
+                        catch (Exception storeEx)
+                        {
+                            Console.WriteLine($"⚠ Could not load store for user: {storeEx.Message}");
+                        }
+                    }
+                    catch (Exception createEx)
+                    {
+                        Console.WriteLine($"⚠ Error creating manager user: {createEx.Message}");
+                        Console.WriteLine($"⚠ Stack trace: {createEx.StackTrace}");
+                        // Continue - will return unauthorized below
+                        user = null;
+                    }
                 }
 
                 if (user != null)
@@ -429,8 +513,7 @@ namespace Backend.Controllers
                                 Email TEXT(200) NOT NULL,
                                 FullName TEXT(100) NOT NULL,
                                 Password TEXT(200) NOT NULL,
-                                StoreId INTEGER NOT NULL,
-                                Role TEXT(20) NOT NULL
+                                StoreId INTEGER NOT NULL
                             )
                         ");
                         Console.WriteLine("✓ Created Users table successfully");
