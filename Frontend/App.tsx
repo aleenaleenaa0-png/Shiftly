@@ -523,31 +523,47 @@ const App: React.FC = () => {
         }
       `}</style>
       
-      <nav className="relative bg-white/70 backdrop-blur-2xl border-b border-rose-200/50 shadow-xl shadow-rose-500/10 px-8 py-4 sticky top-0 z-50">
+      <nav className="relative bg-white/90 backdrop-blur-xl border-b border-rose-200/60 shadow-lg shadow-rose-500/5 px-6 py-3 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center space-x-4">
-            <Logo size="small" showText={true} />
-            <div className="hidden md:flex items-center">
-              <span className="text-2xl font-black bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 bg-clip-text text-transparent">
-                Shiftly
-              </span>
+          {/* Logo and Brand */}
+          <div className="flex items-center space-x-3 min-w-0">
+            <Logo size="small" showText={false} />
+            <div className="flex flex-col">
+              <div className="flex items-center space-x-2">
+                <span className="text-xl font-black bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 bg-clip-text text-transparent">
+                  Shiftly
+                </span>
+                <span className="hidden sm:inline-block text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                  Smart Scheduling
+                </span>
+              </div>
+              {(user.role === 'Manager' || user.userType === 'Manager') && (
+                <span className="text-[9px] text-rose-500 font-semibold mt-0.5">
+                  <i className="fas fa-user-shield mr-1"></i>Manager Dashboard
+                </span>
+              )}
+              {(user.role === 'Employee' || user.userType === 'Employee') && (
+                <span className="text-[9px] text-purple-500 font-semibold mt-0.5">
+                  <i className="fas fa-user mr-1"></i>Employee Portal
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Navigation */}
-          <nav className="flex items-center space-x-2">
+          {/* Navigation Menu */}
+          <div className="flex items-center space-x-2 flex-wrap">
             {/* Only show Schedule for managers */}
             {(user.role === 'Manager' || user.userType === 'Manager') && (
               <button
                 onClick={() => setPage('schedule')}
-                className={`px-4 py-2 rounded-lg font-bold transition-all ${
+                className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all flex items-center ${
                   currentPage === 'schedule'
-                    ? 'bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 text-white shadow-lg shadow-rose-500/40 transform hover:scale-105'
-                    : 'text-slate-700 hover:bg-rose-50 hover:text-rose-600 backdrop-blur-sm'
+                    ? 'bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 text-white shadow-md shadow-rose-500/30 transform hover:scale-105'
+                    : 'text-slate-600 hover:bg-rose-50 hover:text-rose-600'
                 }`}
               >
                 <i className="fas fa-calendar-alt mr-2"></i>
-                Schedule
+                <span>Schedule</span>
               </button>
             )}
             
@@ -555,14 +571,14 @@ const App: React.FC = () => {
             {(user.role === 'Manager' || user.userType === 'Manager') && (
               <button
                 onClick={() => setPage('employees')}
-                className={`px-4 py-2 rounded-lg font-bold transition-all ${
+                className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all flex items-center ${
                   currentPage === 'employees'
-                    ? 'bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 text-white shadow-lg shadow-rose-500/40 transform hover:scale-105'
-                    : 'text-slate-700 hover:bg-rose-50 hover:text-rose-600 backdrop-blur-sm'
+                    ? 'bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 text-white shadow-md shadow-rose-500/30 transform hover:scale-105'
+                    : 'text-slate-600 hover:bg-rose-50 hover:text-rose-600'
                 }`}
               >
                 <i className="fas fa-users mr-2"></i>
-                Employees
+                <span>Employees</span>
               </button>
             )}
             
@@ -570,65 +586,79 @@ const App: React.FC = () => {
             {(user.role === 'Employee' || user.userType === 'Employee') && (
               <button
                 onClick={() => setPage('availability')}
-                className={`px-4 py-2 rounded-lg font-bold transition-all ${
+                className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all flex items-center ${
                   currentPage === 'availability'
-                    ? 'bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 text-white shadow-lg shadow-rose-500/40 transform hover:scale-105'
-                    : 'text-slate-700 hover:bg-rose-50 hover:text-rose-600 backdrop-blur-sm'
+                    ? 'bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 text-white shadow-md shadow-rose-500/30 transform hover:scale-105'
+                    : 'text-slate-600 hover:bg-rose-50 hover:text-rose-600'
                 }`}
               >
                 <i className="fas fa-calendar-check mr-2"></i>
-                My Availability
+                <span>My Availability</span>
               </button>
             )}
-          </nav>
+          </div>
 
-          <div className="flex items-center space-x-3">
-            {backendError && (
-              <span className="text-xs font-medium text-red-500 mr-2">
-                API offline ({backendError})
-              </span>
-            )}
-            {backendStatus && !backendError && (
-              <span className="text-xs font-medium text-emerald-600 mr-2">
-                {backendStatus}
-              </span>
-            )}
-            {/* Only show manager tools for managers */}
+          {/* Right Side: Tools and User Info */}
+          <div className="flex items-center space-x-3 flex-wrap">
+            {/* Backend Status */}
+            <div className="hidden lg:flex items-center space-x-2">
+              {backendError && (
+                <span className="text-xs font-medium text-red-500 bg-red-50 px-2 py-1 rounded-full">
+                  <i className="fas fa-exclamation-circle mr-1"></i>
+                  Offline
+                </span>
+              )}
+              {backendStatus && !backendError && (
+                <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+                  <i className="fas fa-check-circle mr-1"></i>
+                  Connected
+                </span>
+              )}
+            </div>
+
+            {/* Manager Tools */}
             {(user.role === 'Manager' || user.userType === 'Manager') && (
-              <>
+              <div className="flex items-center space-x-2">
                 <button 
                     onClick={handleAutoFill}
                     disabled={isAutoFilling}
-                    className="flex items-center space-x-2 bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 hover:from-rose-400 hover:via-purple-400 hover:to-cyan-400 text-white px-5 py-2.5 rounded-full text-sm font-black transition-all shadow-lg shadow-rose-500/40 hover:shadow-xl hover:shadow-rose-500/60 disabled:opacity-50 transform hover:scale-105 active:scale-95 relative overflow-hidden group"
+                    className="flex items-center space-x-2 bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 hover:from-rose-400 hover:via-purple-400 hover:to-cyan-400 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-rose-500/30 hover:shadow-lg hover:shadow-rose-500/40 disabled:opacity-50 transform hover:scale-105 active:scale-95 relative overflow-hidden group"
+                    title="Auto Schedule Shifts"
                 >
                   <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></span>
-                  <span className="relative z-10">
-                    <i className={`fas ${isAutoFilling ? 'fa-spinner fa-spin' : 'fa-robot'}`}></i>
-                    <span>{isAutoFilling ? 'משבץ...' : 'שיבוץ אוטומטי'}</span>
+                  <span className="relative z-10 flex items-center">
+                    <i className={`fas ${isAutoFilling ? 'fa-spinner fa-spin' : 'fa-magic'}`}></i>
+                    <span className="hidden sm:inline ml-2">Auto Schedule</span>
                   </span>
                 </button>
                 <button 
                     onClick={runAiAnalysis}
                     disabled={isAnalyzing}
-                    className="flex items-center space-x-2 bg-gradient-to-r from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 text-white px-5 py-2.5 rounded-full text-sm font-black transition-all shadow-lg shadow-slate-900/50 hover:shadow-xl disabled:opacity-50 transform hover:scale-105 active:scale-95"
+                    className="flex items-center space-x-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg disabled:opacity-50 transform hover:scale-105 active:scale-95"
+                    title="Performance Report"
                 >
                     <i className={`fas ${isAnalyzing ? 'fa-spinner fa-spin' : 'fa-chart-line'}`}></i>
-                    <span>{isAnalyzing ? 'מנתח...' : 'דו"ח ביצועים'}</span>
+                    <span className="hidden sm:inline ml-2">Report</span>
                 </button>
-              </>
+              </div>
             )}
-            <div className="flex items-center space-x-3 ml-4 pl-4 border-l border-rose-200">
-              <div className="text-right">
+
+            {/* User Info and Logout */}
+            <div className="flex items-center space-x-3 pl-3 border-l border-rose-200">
+              <div className="text-right hidden sm:block">
                 <p className="text-xs font-bold text-slate-700">{user.fullName}</p>
-                <p className="text-[10px] text-slate-500">{user.storeName || `Store #${user.storeId}`}</p>
+                <p className="text-[10px] text-slate-500 flex items-center">
+                  <i className="fas fa-store mr-1"></i>
+                  {user.storeName || `Store #${user.storeId}`}
+                </p>
               </div>
               <button
                 onClick={handleLogout}
-                className="flex items-center space-x-2 bg-gradient-to-r from-red-500 to-red-400 hover:from-red-400 hover:to-red-300 text-white px-4 py-2 rounded-lg text-sm font-black transition-all shadow-lg shadow-red-500/40 hover:shadow-xl transform hover:scale-105 active:scale-95"
+                className="flex items-center space-x-2 bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg transform hover:scale-105 active:scale-95"
                 title="Logout"
               >
                 <i className="fas fa-sign-out-alt"></i>
-                <span>Logout</span>
+                <span className="hidden sm:inline">Logout</span>
               </button>
             </div>
           </div>
