@@ -34,7 +34,11 @@ namespace Backend.Controllers
                     return BadRequest(new { success = false, error = "Email and password are required" });
                 }
 
-                Console.WriteLine($"Login attempt - Email: {loginDto.Email?.Substring(0, Math.Min(loginDto.Email.Length, 20))}...");
+                // Trim email and password to avoid whitespace issues
+                var email = loginDto.Email.Trim();
+                var password = loginDto.Password.Trim();
+
+                Console.WriteLine($"Login attempt - Email: {email?.Substring(0, Math.Min(email.Length, 20))}...");
 
                 // Check database connection first
                 try
@@ -110,11 +114,11 @@ namespace Backend.Controllers
                     }
 
                     // Query user without Include first to avoid relationship issues
-                    Console.WriteLine($"Attempting to query Users table for email: {loginDto.Email}");
+                    Console.WriteLine($"Attempting to query Users table for email: {email}");
                     try
                     {
                         user = await _db.Users
-                            .FirstOrDefaultAsync(u => u.Email == loginDto.Email && u.Password == loginDto.Password);
+                            .FirstOrDefaultAsync(u => u.Email == email && u.Password == password);
                         Console.WriteLine($"Query completed. User found: {user != null}");
                     }
                     catch (Exception queryEx)
@@ -169,7 +173,7 @@ namespace Backend.Controllers
                 }
 
                 // If manager credentials are used but user doesn't exist, create it automatically
-                if (user == null && loginDto.Email == "manager@shiftly.com" && loginDto.Password == "manager123")
+                if (user == null && email == "manager@shiftly.com" && password == "manager123")
                 {
                     Console.WriteLine("Manager credentials detected but user doesn't exist. Creating manager user...");
                     try
@@ -231,9 +235,13 @@ namespace Backend.Controllers
                     }
                 }
 
-                if (user != null)
+                // CRITICAL: Only manager@shiftly.com with manager123 can be a Manager
+                // All other users (including Users table entries) should be treated as Workers/Employees
+                bool isManagerCredentials = email == "manager@shiftly.com" && password == "manager123";
+                
+                if (user != null && isManagerCredentials)
                 {
-                    // Manager login
+                    // Manager login - only for manager@shiftly.com/manager123
                     var claims = new List<Claim>
                     {
                         new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()),
@@ -271,69 +279,139 @@ namespace Backend.Controllers
                         }
                     });
                 }
+                else if (user != null && !isManagerCredentials)
+                {
+                    // User exists in Users table but is NOT manager credentials
+                    // Treat them as a Worker/Employee instead
+                    Console.WriteLine($"User {user.Email} found in Users table but not manager credentials. Treating as Worker.");
+                    // Continue to employee lookup below - don't log them in as manager
+                    user = null;
+                }
 
-                // Check if it's an employee
+                // Check if it's an employee - use raw SQL for maximum reliability
                 Employee? employee = null;
+                Console.WriteLine($"═══════════════════════════════════════");
+                Console.WriteLine($"EMPLOYEE LOGIN ATTEMPT - Email: {email}");
+                Console.WriteLine($"═══════════════════════════════════════");
+                
                 try
                 {
-                    // First check if Employees table exists and has Email/Password columns
-                    // Try a simple query to test schema
+                    // First ensure Email/Password columns exist
                     try
                     {
                         var testQuery = await _db.Employees
                             .Where(e => e.Email != null)
                             .Take(1)
                             .ToListAsync();
+                        Console.WriteLine("✓ Email column exists");
                     }
                     catch (Exception schemaEx)
                     {
-                        // If Email column doesn't exist, try to add it
                         if (schemaEx.Message.Contains("unknown field name") || schemaEx.Message.Contains("Email"))
                         {
-                            Console.WriteLine("Employees table missing Email/Password columns. Attempting to add them...");
+                            Console.WriteLine("⚠ Adding Email/Password columns...");
                             try
                             {
                                 await _db.Database.ExecuteSqlRawAsync("ALTER TABLE Employees ADD COLUMN Email TEXT(200)");
                                 await _db.Database.ExecuteSqlRawAsync("ALTER TABLE Employees ADD COLUMN Password TEXT(200)");
-                                Console.WriteLine("✓ Added Email and Password columns to Employees table");
+                                Console.WriteLine("✓ Columns added");
                             }
                             catch (Exception alterEx)
                             {
-                                Console.WriteLine($"⚠ Could not add Email/Password columns: {alterEx.Message}");
-                                // Columns might already exist or table structure is different
+                                Console.WriteLine($"⚠ Column add failed (may exist): {alterEx.Message}");
                             }
                         }
                     }
                     
-                    // Now try to query employees with Email/Password
-                    employee = await _db.Employees
-                        .Where(e => e.Email != null && e.Password != null && 
-                                   e.Email == loginDto.Email && e.Password == loginDto.Password)
-                        .FirstOrDefaultAsync();
+                    // Use raw SQL to query - most reliable method
+                    Console.WriteLine("Querying employees using raw SQL...");
+                    var sql = @"
+                        SELECT EmployeeId, FirstName, LastName, Email, Password, HourlyWage, ProductivityScore, StoreId 
+                        FROM Employees 
+                        WHERE Email IS NOT NULL AND Password IS NOT NULL
+                    ";
                     
-                    // If found, get store name separately (safely)
+                    var employees = await _db.Employees
+                        .FromSqlRaw(sql)
+                        .ToListAsync();
+                    
+                    Console.WriteLine($"Found {employees.Count} employees with Email/Password");
+                    
+                    // Also try getting all employees as fallback
+                    List<Employee> allEmployees = employees;
+                    if (employees.Count == 0)
+                    {
+                        try
+                        {
+                            Console.WriteLine("Trying to get all employees as fallback...");
+                            allEmployees = await _db.Employees.ToListAsync();
+                            Console.WriteLine($"Found {allEmployees.Count} total employees");
+                        }
+                        catch (Exception allEx)
+                        {
+                            Console.WriteLine($"Fallback query failed: {allEx.Message}");
+                            allEmployees = employees; // Use original list
+                        }
+                    }
+                    
+                    // Filter in memory with case-insensitive matching
+                    Console.WriteLine($"Searching for email: '{email}' (case-insensitive)");
+                    employee = allEmployees
+                        .Where(e => 
+                            e.Email != null && 
+                            e.Password != null &&
+                            e.Email.Trim().Equals(email, StringComparison.OrdinalIgnoreCase) &&
+                            e.Password.Trim() == password)
+                        .FirstOrDefault();
+                    
                     if (employee != null)
                     {
+                        Console.WriteLine($"✓✓✓ EMPLOYEE FOUND! ID: {employee.EmployeeId}, Name: {employee.FirstName} {employee.LastName}");
+                        
+                        // Load store
                         try
                         {
                             var store = await _db.Stores.FindAsync(employee.StoreId);
                             employee.Store = store;
+                            Console.WriteLine($"Store loaded: {store?.Name ?? "N/A"}");
                         }
                         catch (Exception storeEx)
                         {
-                            Console.WriteLine($"⚠ Could not load store for employee: {storeEx.Message}");
-                            // Continue without store - employee can still log in
+                            Console.WriteLine($"⚠ Store load failed: {storeEx.Message}");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"✗✗✗ NO MATCH FOUND for email: {email}");
+                        if (allEmployees.Count > 0)
+                        {
+                            var withEmail = allEmployees.Where(e => e.Email != null).ToList();
+                            Console.WriteLine($"Employees with Email in DB: {withEmail.Count}");
+                            if (withEmail.Count > 0)
+                            {
+                                var sampleEmails = withEmail.Take(5).Select(e => $"'{e.Email}'").ToList();
+                                Console.WriteLine($"Sample emails: {string.Join(", ", sampleEmails)}");
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine("⚠ No employees found in database at all!");
                         }
                     }
                 }
                 catch (Exception empEx)
                 {
-                    Console.WriteLine($"Error querying Employees table: {empEx.Message}");
-                    // If it's still a schema error, that's okay - employees might not have login yet
-                    if (empEx.Message.Contains("unknown field name") || empEx.Message.Contains("Email") || empEx.Message.Contains("Password"))
+                    Console.WriteLine($"═══════════════════════════════════════");
+                    Console.WriteLine($"CRITICAL ERROR in employee lookup:");
+                    Console.WriteLine($"Type: {empEx.GetType().Name}");
+                    Console.WriteLine($"Message: {empEx.Message}");
+                    if (empEx.InnerException != null)
                     {
-                        Console.WriteLine("Employees table doesn't have Email/Password columns - employees cannot log in yet");
+                        Console.WriteLine($"Inner: {empEx.InnerException.GetType().Name} - {empEx.InnerException.Message}");
                     }
+                    Console.WriteLine($"Stack: {empEx.StackTrace}");
+                    Console.WriteLine($"═══════════════════════════════════════");
+                    employee = null;
                 }
                 
                 Console.WriteLine($"Employee lookup result: {(employee != null ? $"Found employee ID {employee.EmployeeId}" : "No employee found")}");

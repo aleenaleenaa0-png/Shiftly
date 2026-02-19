@@ -56,7 +56,14 @@ namespace Backend
                     options.AccessDeniedPath = "/Account/AccessDenied";
                 });
 
-            builder.Services.AddAuthorization();
+            builder.Services.AddAuthorization(options =>
+            {
+                // Policy for Manager-only access
+                options.AddPolicy("ManagerOnly", policy =>
+                {
+                    policy.RequireRole("Manager");
+                });
+            });
 
             var app = builder.Build();
 

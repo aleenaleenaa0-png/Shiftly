@@ -1,4 +1,5 @@
 using Backend.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -243,6 +244,7 @@ namespace Backend.Controllers
 
         // POST: api/Stores
         [HttpPost]
+        [Authorize(Roles = "Manager")]
         public async Task<ActionResult<Store>> CreateStore([FromBody] CreateStoreDto dto)
         {
             try
@@ -281,6 +283,7 @@ namespace Backend.Controllers
 
         // POST: api/Stores/seed
         [HttpPost("seed")]
+        [Authorize(Roles = "Manager")]
         public async Task<IActionResult> SeedStores()
         {
             try

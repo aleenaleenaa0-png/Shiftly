@@ -1,4 +1,5 @@
 using Backend.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -198,6 +199,7 @@ namespace Backend.Controllers
 
         // POST: api/Employees
         [HttpPost]
+        [Authorize(Roles = "Manager")]
         public async Task<ActionResult<Employee>> CreateEmployee([FromBody] CreateEmployeeDto dto)
         {
             try
@@ -301,6 +303,7 @@ namespace Backend.Controllers
 
         // PUT: api/Employees/5
         [HttpPut("{id}")]
+        [Authorize(Roles = "Manager")]
         public async Task<IActionResult> UpdateEmployee(int id, [FromBody] UpdateEmployeeDto dto)
         {
             try
@@ -336,6 +339,7 @@ namespace Backend.Controllers
 
         // DELETE: api/Employees/5
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Manager")]
         public async Task<IActionResult> DeleteEmployee(int id)
         {
             try

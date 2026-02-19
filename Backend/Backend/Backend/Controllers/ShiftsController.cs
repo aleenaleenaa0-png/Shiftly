@@ -1,4 +1,5 @@
 using Backend.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -135,6 +136,7 @@ namespace Backend.Controllers
 
         // POST: api/Shifts
         [HttpPost]
+        [Authorize(Roles = "Manager")]
         public async Task<ActionResult<Shift>> CreateShift([FromBody] CreateShiftDto dto)
         {
             try
@@ -167,6 +169,7 @@ namespace Backend.Controllers
 
         // PUT: api/Shifts/5
         [HttpPut("{id}")]
+        [Authorize(Roles = "Manager")]
         public async Task<IActionResult> UpdateShift(int id, [FromBody] UpdateShiftDto dto)
         {
             try
@@ -196,6 +199,7 @@ namespace Backend.Controllers
 
         // DELETE: api/Shifts/5
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Manager")]
         public async Task<IActionResult> DeleteShift(int id)
         {
             try
@@ -219,6 +223,7 @@ namespace Backend.Controllers
 
         // POST: api/Shifts/5/assign
         [HttpPost("{id}/assign")]
+        [Authorize(Roles = "Manager")]
         public async Task<IActionResult> AssignEmployee(int id, [FromBody] AssignEmployeeDto dto)
         {
             try
