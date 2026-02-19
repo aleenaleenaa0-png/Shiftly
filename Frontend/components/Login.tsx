@@ -103,33 +103,93 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onSwitchToSignUp }) => {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Soft animated background */}
+      {/* Live animated background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {/* Soft gradient orbs */}
-        <div className="absolute top-0 left-0 w-96 h-96 bg-rose-400/20 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-0 right-0 w-96 h-96 bg-purple-400/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-cyan-400/15 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }}></div>
+        {/* Animated gradient orbs that move */}
+        <div 
+          className="absolute w-96 h-96 bg-rose-400/25 rounded-full blur-3xl"
+          style={{
+            top: '10%',
+            left: '10%',
+            animation: 'moveOrb1 20s ease-in-out infinite'
+          }}
+        ></div>
+        <div 
+          className="absolute w-96 h-96 bg-purple-400/25 rounded-full blur-3xl"
+          style={{
+            bottom: '10%',
+            right: '10%',
+            animation: 'moveOrb2 25s ease-in-out infinite'
+          }}
+        ></div>
+        <div 
+          className="absolute w-96 h-96 bg-cyan-400/20 rounded-full blur-3xl"
+          style={{
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            animation: 'moveOrb3 30s ease-in-out infinite'
+          }}
+        ></div>
         
-        {/* Floating particles */}
-        {[...Array(15)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-2 h-2 rounded-full blur-sm"
-            style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              backgroundColor: i % 3 === 0 ? 'rgba(255, 107, 107, 0.3)' : i % 3 === 1 ? 'rgba(139, 92, 246, 0.3)' : 'rgba(34, 211, 238, 0.3)',
-              animation: `float ${5 + Math.random() * 5}s ease-in-out infinite`,
-              animationDelay: `${Math.random() * 2}s`
-            }}
-          />
-        ))}
+        {/* Floating particles with complex movement */}
+        {[...Array(25)].map((_, i) => {
+          const randomX = Math.random() * 200 - 100;
+          const randomY = Math.random() * 200 - 100;
+          const duration = 8 + Math.random() * 12;
+          return (
+            <div
+              key={i}
+              className="absolute rounded-full"
+              style={{
+                width: `${Math.random() * 6 + 3}px`,
+                height: `${Math.random() * 6 + 3}px`,
+                left: `${Math.random() * 100}%`,
+                top: `${Math.random() * 100}%`,
+                backgroundColor: i % 3 === 0 ? 'rgba(251, 113, 133, 0.5)' : i % 3 === 1 ? 'rgba(168, 85, 247, 0.5)' : 'rgba(34, 211, 238, 0.5)',
+                animation: `floatParticle ${duration}s ease-in-out infinite`,
+                animationDelay: `${Math.random() * 5}s`,
+                filter: 'blur(1px)',
+                boxShadow: `0 0 ${Math.random() * 10 + 5}px currentColor`
+              }}
+            />
+          );
+        })}
       </div>
       
       <style>{`
-        @keyframes float {
-          0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.3; }
-          50% { transform: translate(${Math.random() * 50 - 25}px, ${Math.random() * 50 - 25}px) scale(1.5); opacity: 0.6; }
+        @keyframes moveOrb1 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          25% { transform: translate(150px, -100px) scale(1.3); }
+          50% { transform: translate(-100px, 150px) scale(0.9); }
+          75% { transform: translate(100px, 100px) scale(1.2); }
+        }
+        @keyframes moveOrb2 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          33% { transform: translate(-150px, -150px) scale(1.2); }
+          66% { transform: translate(100px, -100px) scale(0.8); }
+        }
+        @keyframes moveOrb3 {
+          0%, 100% { transform: translate(-50%, -50%) scale(1) rotate(0deg); }
+          50% { transform: translate(-50%, -50%) scale(1.4) rotate(180deg); }
+        }
+        @keyframes floatParticle {
+          0%, 100% {
+            transform: translate(0, 0) scale(1);
+            opacity: 0.4;
+          }
+          25% {
+            transform: translate(${Math.random() * 80 - 40}px, ${Math.random() * 80 - 40}px) scale(1.8);
+            opacity: 0.8;
+          }
+          50% {
+            transform: translate(${Math.random() * 100 - 50}px, ${Math.random() * 100 - 50}px) scale(0.6);
+            opacity: 0.3;
+          }
+          75% {
+            transform: translate(${Math.random() * 60 - 30}px, ${Math.random() * 60 - 30}px) scale(1.4);
+            opacity: 0.6;
+          }
         }
       `}</style>
       

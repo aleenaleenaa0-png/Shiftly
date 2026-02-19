@@ -481,10 +481,47 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col relative bg-gradient-to-br from-rose-50 via-purple-50 to-cyan-50">
-      {/* Animated background overlay - soft warm colors */}
-      <div className="fixed inset-0 bg-gradient-to-br from-rose-100/30 via-purple-100/30 to-cyan-100/30 z-0"></div>
-      <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(251,113,133,0.1),transparent_50%)] z-0"></div>
+    <div className="min-h-screen flex flex-col relative">
+      {/* Live animated background particles */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+        {[...Array(30)].map((_, i) => (
+          <div
+            key={i}
+            className="absolute rounded-full animate-pulse"
+            style={{
+              width: `${Math.random() * 8 + 4}px`,
+              height: `${Math.random() * 8 + 4}px`,
+              left: `${Math.random() * 100}%`,
+              top: `${Math.random() * 100}%`,
+              backgroundColor: i % 3 === 0 ? 'rgba(251, 113, 133, 0.4)' : i % 3 === 1 ? 'rgba(168, 85, 247, 0.4)' : 'rgba(34, 211, 238, 0.4)',
+              animation: `floatParticle ${10 + Math.random() * 15}s ease-in-out infinite`,
+              animationDelay: `${Math.random() * 5}s`,
+              filter: 'blur(1px)'
+            }}
+          />
+        ))}
+      </div>
+      
+      <style>{`
+        @keyframes floatParticle {
+          0%, 100% {
+            transform: translate(0, 0) scale(1);
+            opacity: 0.3;
+          }
+          25% {
+            transform: translate(${Math.random() * 100 - 50}px, ${Math.random() * 100 - 50}px) scale(1.5);
+            opacity: 0.6;
+          }
+          50% {
+            transform: translate(${Math.random() * 100 - 50}px, ${Math.random() * 100 - 50}px) scale(0.8);
+            opacity: 0.4;
+          }
+          75% {
+            transform: translate(${Math.random() * 100 - 50}px, ${Math.random() * 100 - 50}px) scale(1.2);
+            opacity: 0.5;
+          }
+        }
+      `}</style>
       
       <nav className="relative bg-white/70 backdrop-blur-2xl border-b border-rose-200/50 shadow-xl shadow-rose-500/10 px-8 py-4 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
