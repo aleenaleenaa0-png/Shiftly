@@ -224,7 +224,7 @@ const EmployeeManagement: React.FC = () => {
               resetForm();
               setShowForm(true);
             }}
-            className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:shadow-xl transition-all flex items-center space-x-2"
+            className="bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-600 hover:from-blue-700 hover:via-blue-600 hover:to-cyan-700 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 transition-all flex items-center space-x-2"
           >
             <i className="fas fa-plus"></i>
             <span>Add Employee</span>
@@ -267,7 +267,7 @@ const EmployeeManagement: React.FC = () => {
                       value={formData.firstName}
                       onChange={handleInputChange}
                       required
-                      className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all hover:border-blue-300"
                     />
                   </div>
                   <div>
@@ -280,7 +280,7 @@ const EmployeeManagement: React.FC = () => {
                       value={formData.lastName}
                       onChange={handleInputChange}
                       required
-                      className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all hover:border-blue-300"
                     />
                   </div>
                 </div>
@@ -298,7 +298,7 @@ const EmployeeManagement: React.FC = () => {
                       min="0"
                       step="0.01"
                       required
-                      className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all hover:border-blue-300"
                     />
                   </div>
                   <div>
@@ -314,7 +314,7 @@ const EmployeeManagement: React.FC = () => {
                       max="10"
                       step="0.1"
                       required
-                      className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all hover:border-blue-300"
                     />
                   </div>
                 </div>
@@ -361,7 +361,7 @@ const EmployeeManagement: React.FC = () => {
         {/* Employees List */}
         {loading ? (
           <div className="text-center py-12">
-            <i className="fas fa-spinner fa-spin text-4xl text-indigo-500 mb-4"></i>
+            <i className="fas fa-spinner fa-spin text-4xl text-blue-500 mb-4"></i>
             <p className="text-slate-500">Loading employees...</p>
           </div>
         ) : employees.length === 0 ? (
@@ -420,7 +420,7 @@ const EmployeeManagement: React.FC = () => {
                           <div className="flex items-center justify-end space-x-2">
                             <button
                               onClick={() => handleEdit(employee)}
-                              className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                               title="Edit"
                             >
                               <i className="fas fa-edit"></i>

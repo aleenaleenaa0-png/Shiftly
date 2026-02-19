@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Logo from './Logo';
 
 interface LoginProps {
   onLoginSuccess: (user: any) => void;
@@ -101,33 +102,64 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onSwitchToSignUp }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 flex items-center justify-center p-4">
-      <div className="max-w-md w-full">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center mb-4">
-            <div className="relative">
-              <div className="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-4 rounded-2xl shadow-2xl shadow-purple-200/50">
-                <div className="flex items-center justify-center">
-                  <i className="fas fa-calendar-check text-white text-3xl"></i>
-                  <i className="fas fa-clock text-white text-sm absolute -top-1 -right-1 bg-yellow-400 rounded-full p-1.5 shadow-lg"></i>
-                </div>
-              </div>
-              <div className="absolute -inset-2 bg-gradient-to-br from-indigo-400 via-purple-400 to-pink-400 rounded-2xl blur opacity-30 animate-pulse"></div>
-            </div>
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Soft animated background */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        {/* Soft gradient orbs */}
+        <div className="absolute top-0 left-0 w-96 h-96 bg-rose-400/20 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-0 right-0 w-96 h-96 bg-purple-400/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-cyan-400/15 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }}></div>
+        
+        {/* Floating particles */}
+        {[...Array(15)].map((_, i) => (
+          <div
+            key={i}
+            className="absolute w-2 h-2 rounded-full blur-sm"
+            style={{
+              left: `${Math.random() * 100}%`,
+              top: `${Math.random() * 100}%`,
+              backgroundColor: i % 3 === 0 ? 'rgba(255, 107, 107, 0.3)' : i % 3 === 1 ? 'rgba(139, 92, 246, 0.3)' : 'rgba(34, 211, 238, 0.3)',
+              animation: `float ${5 + Math.random() * 5}s ease-in-out infinite`,
+              animationDelay: `${Math.random() * 2}s`
+            }}
+          />
+        ))}
+      </div>
+      
+      <style>{`
+        @keyframes float {
+          0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.3; }
+          50% { transform: translate(${Math.random() * 50 - 25}px, ${Math.random() * 50 - 25}px) scale(1.5); opacity: 0.6; }
+        }
+      `}</style>
+      
+      <div className="max-w-md w-full relative z-10">
+        {/* Logo with prominent Shiftly name */}
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center justify-center mb-6">
+            <Logo size="large" showText={false} />
           </div>
-          <h1 className="text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent mb-2">
+          <h1 className="text-7xl font-black bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 bg-clip-text text-transparent mb-3 drop-shadow-lg animate-pulse">
             Shiftly
           </h1>
-          <p className="text-slate-600 font-medium">Smart Workforce Management</p>
+          <p className="text-slate-700 font-semibold text-xl">Smart Workforce Management</p>
         </div>
 
-        {/* Login Form */}
-        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-8">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">Sign In</h2>
+        {/* Login Form with soft glassmorphism */}
+        <div className="relative bg-white/80 backdrop-blur-2xl rounded-3xl shadow-2xl shadow-rose-500/20 border border-white/50 p-8 transform hover:scale-[1.01] transition-all duration-500">
+          {/* Shimmer effect */}
+          <div className="absolute inset-0 rounded-3xl shimmer opacity-20"></div>
+          
+          {/* Inner glow */}
+          <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-rose-100/30 via-purple-100/30 to-cyan-100/30 opacity-60"></div>
+          
+          <div className="relative z-10">
+            <h2 className="text-4xl font-black bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 bg-clip-text text-transparent mb-8">
+              Sign In to <span className="text-5xl">Shiftly</span>
+            </h2>
 
           {error && (
-            <div className="mb-6 bg-red-50 border-2 border-red-200 rounded-xl p-4 flex items-center space-x-3">
+            <div className="mb-6 bg-red-50 backdrop-blur-sm border-2 border-red-200 rounded-xl p-4 flex items-center space-x-3 shadow-lg">
               <i className="fas fa-exclamation-circle text-red-500"></i>
               <span className="text-red-700 font-medium text-sm">{error}</span>
             </div>
@@ -144,7 +176,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onSwitchToSignUp }) => {
                 value={formData.email}
                 onChange={handleInputChange}
                 required
-                className="w-full px-4 py-3 border-2 border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                className="w-full px-4 py-3 bg-white/90 backdrop-blur-sm border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-400 focus:border-rose-400 transition-all hover:border-rose-300 hover:bg-white text-slate-800 placeholder-slate-400"
                 placeholder="manager@store.com"
               />
             </div>
@@ -159,7 +191,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onSwitchToSignUp }) => {
                 value={formData.password}
                 onChange={handleInputChange}
                 required
-                className="w-full px-4 py-3 border-2 border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                className="w-full px-4 py-3 bg-white/90 backdrop-blur-sm border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-400 focus:border-rose-400 transition-all hover:border-rose-300 hover:bg-white text-slate-800 placeholder-slate-400"
                 placeholder="Enter your password"
               />
             </div>
@@ -167,8 +199,10 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onSwitchToSignUp }) => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-6 py-4 rounded-xl font-bold shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+              className="w-full bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 hover:from-rose-400 hover:via-purple-400 hover:to-cyan-400 text-white px-6 py-4 rounded-xl font-black shadow-2xl shadow-rose-500/40 hover:shadow-purple-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transform hover:scale-105 active:scale-95 relative overflow-hidden group"
             >
+              <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></span>
+              <span className="relative z-10">
               {loading ? (
                 <>
                   <i className="fas fa-spinner fa-spin"></i>
@@ -180,6 +214,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onSwitchToSignUp }) => {
                   <span>Sign In</span>
                 </>
               )}
+              </span>
             </button>
           </form>
 
@@ -188,11 +223,12 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onSwitchToSignUp }) => {
               Don't have an account?{' '}
               <button
                 onClick={onSwitchToSignUp}
-                className="text-indigo-600 hover:text-indigo-700 font-bold transition-colors"
+                className="text-rose-600 hover:text-rose-500 font-bold transition-colors underline decoration-2 underline-offset-2"
               >
                 Sign Up
               </button>
             </p>
+          </div>
           </div>
         </div>
       </div>

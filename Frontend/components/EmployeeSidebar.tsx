@@ -10,9 +10,9 @@ interface EmployeeSidebarProps {
 const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ employees, onDragStart }) => {
   return (
     <div className="w-full lg:w-96 flex-shrink-0">
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8 sticky top-24">
-        <h3 className="text-xl font-black text-slate-900 mb-8 flex items-center tracking-tight">
-          <i className="fas fa-users-rectangle mr-3 text-red-600"></i>
+      <div className="bg-white/80 backdrop-blur-2xl rounded-3xl shadow-xl shadow-rose-500/10 border border-rose-200/50 p-8 sticky top-24">
+        <h3 className="text-xl font-black text-slate-800 mb-8 flex items-center tracking-tight">
+          <i className="fas fa-users-rectangle mr-3 text-rose-500"></i>
           סגל עובדים
         </h3>
         
@@ -26,7 +26,7 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ employees, onDragStar
                   key={emp.id}
                   draggable
                   onDragStart={(e) => onDragStart(e, emp.id)}
-                  className="group p-5 rounded-2xl border border-slate-100 bg-slate-50 hover:border-red-300 hover:bg-white transition-all cursor-grab active:cursor-grabbing hover:shadow-lg hover:-translate-y-1"
+                  className="group p-5 rounded-2xl border border-rose-200 bg-white/60 backdrop-blur-sm hover:border-rose-300 hover:bg-white hover:shadow-xl hover:shadow-rose-500/20 transition-all cursor-grab active:cursor-grabbing hover:-translate-y-1 transform hover:scale-105"
                 >
                   <div className="flex items-center">
                     <div className="relative">
@@ -38,22 +38,22 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ employees, onDragStar
                         <div className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-white ${scoreColor}`}></div>
                     </div>
                     <div className="flex-1 min-w-0 ml-4">
-                      <p className="text-sm font-black text-slate-900 truncate">{emp.name}</p>
+                      <p className="text-sm font-black text-slate-800 truncate">{emp.name}</p>
                       <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{emp.role}</p>
                     </div>
                     <div className="text-right">
-                      <div className="text-lg font-black text-slate-900 leading-none">{emp.productivityScore}%</div>
-                      <div className="text-[9px] text-slate-400 font-bold uppercase mt-1">יעילות</div>
+                      <div className="text-lg font-black text-slate-800 leading-none">{emp.productivityScore}%</div>
+                      <div className="text-[9px] text-slate-500 font-bold uppercase mt-1">יעילות</div>
                     </div>
                   </div>
-                  <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
-                    <div className="flex items-center text-[11px] font-bold text-slate-400">
+                  <div className="mt-4 pt-4 border-t border-rose-200 flex items-center justify-between">
+                    <div className="flex items-center text-[11px] font-bold text-slate-500">
                         <i className="fas fa-dollar-sign mr-1"></i>
                         <span>{emp.hourlyRate}/שעה</span>
                     </div>
                     <div className="flex -space-x-1">
                         {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, i) => (
-                            <div key={i} className="w-5 h-5 rounded-md flex items-center justify-center text-[8px] font-black border border-white bg-slate-200 text-slate-400">
+                            <div key={i} className="w-5 h-5 rounded-md flex items-center justify-center text-[8px] font-black border border-rose-200 bg-rose-50 text-slate-400">
                                 {day}
                             </div>
                         ))}
@@ -64,12 +64,12 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ employees, onDragStar
           })}
         </div>
 
-        <div className="mt-10 p-6 bg-red-600 rounded-3xl text-white shadow-xl shadow-red-200">
+        <div className="mt-10 p-6 bg-gradient-to-br from-rose-500 via-purple-500 to-cyan-500 rounded-3xl text-white shadow-xl shadow-rose-500/30">
           <div className="flex items-center mb-3">
-            <i className="fas fa-lightbulb text-red-200 mr-2"></i>
-            <p className="text-[11px] font-black uppercase tracking-widest text-red-100">טיפ למנהל</p>
+            <i className="fas fa-lightbulb text-yellow-200 mr-2"></i>
+            <p className="text-[11px] font-black uppercase tracking-widest text-white/90">טיפ למנהל</p>
           </div>
-          <p className="text-sm leading-relaxed font-medium">
+          <p className="text-sm leading-relaxed font-medium text-white">
             שבץ את העובדים עם ציון היעילות הגבוה ביותר למשמרות הערב, שם פוטנציאל המכירות הוא הגבוה ביותר.
           </p>
         </div>

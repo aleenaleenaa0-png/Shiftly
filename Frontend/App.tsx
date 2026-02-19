@@ -8,6 +8,7 @@ import EmployeeManagement from './components/EmployeeManagement';
 import EmployeeAvailability from './components/EmployeeAvailability';
 import Login from './components/Login';
 import SignUp from './components/SignUp';
+import Logo from './components/Logo';
 import { getScheduleOptimizationInsights, getSmartSuggestion, autoGenerateSchedule } from './geminiService';
 
 type Page = 'schedule' | 'employees' | 'availability';
@@ -453,10 +454,10 @@ const App: React.FC = () => {
   // Show login page if not authenticated
   if (checkingAuth) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center">
-          <i className="fas fa-spinner fa-spin text-4xl text-indigo-500 mb-4"></i>
-          <p className="text-slate-500">Loading...</p>
+      <div className="min-h-screen flex items-center justify-center relative bg-gradient-to-br from-rose-50 via-purple-50 to-cyan-50">
+        <div className="text-center relative z-10">
+          <i className="fas fa-spinner fa-spin text-5xl text-rose-500 mb-4"></i>
+          <p className="text-slate-700 font-semibold">Loading <span className="text-rose-500 font-black">Shiftly</span>...</p>
         </div>
       </div>
     );
@@ -480,24 +481,19 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      <nav className="bg-white border-b border-slate-200 px-8 py-4 sticky top-0 z-50">
+    <div className="min-h-screen flex flex-col relative bg-gradient-to-br from-rose-50 via-purple-50 to-cyan-50">
+      {/* Animated background overlay - soft warm colors */}
+      <div className="fixed inset-0 bg-gradient-to-br from-rose-100/30 via-purple-100/30 to-cyan-100/30 z-0"></div>
+      <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(251,113,133,0.1),transparent_50%)] z-0"></div>
+      
+      <nav className="relative bg-white/70 backdrop-blur-2xl border-b border-rose-200/50 shadow-xl shadow-rose-500/10 px-8 py-4 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center space-x-3">
-            <div className="relative">
-              <div className="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-3 rounded-xl shadow-lg shadow-purple-200/50 transform hover:scale-105 transition-transform duration-200">
-                <div className="flex items-center justify-center">
-                  <i className="fas fa-calendar-check text-white text-xl"></i>
-                  <i className="fas fa-clock text-white text-xs absolute -top-1 -right-1 bg-yellow-400 rounded-full p-1 shadow-md"></i>
-                </div>
-              </div>
-              <div className="absolute -inset-1 bg-gradient-to-br from-indigo-400 via-purple-400 to-pink-400 rounded-xl blur opacity-30 animate-pulse"></div>
-            </div>
-            <div className="flex flex-col">
-              <h1 className="text-2xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight">
+          <div className="flex items-center space-x-4">
+            <Logo size="small" showText={true} />
+            <div className="hidden md:flex items-center">
+              <span className="text-2xl font-black bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 bg-clip-text text-transparent">
                 Shiftly
-              </h1>
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Smart Scheduling</span>
+              </span>
             </div>
           </div>
 
@@ -509,8 +505,8 @@ const App: React.FC = () => {
                 onClick={() => setPage('schedule')}
                 className={`px-4 py-2 rounded-lg font-bold transition-all ${
                   currentPage === 'schedule'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'text-slate-600 hover:bg-slate-100'
+                    ? 'bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 text-white shadow-lg shadow-rose-500/40 transform hover:scale-105'
+                    : 'text-slate-700 hover:bg-rose-50 hover:text-rose-600 backdrop-blur-sm'
                 }`}
               >
                 <i className="fas fa-calendar-alt mr-2"></i>
@@ -524,8 +520,8 @@ const App: React.FC = () => {
                 onClick={() => setPage('employees')}
                 className={`px-4 py-2 rounded-lg font-bold transition-all ${
                   currentPage === 'employees'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'text-slate-600 hover:bg-slate-100'
+                    ? 'bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 text-white shadow-lg shadow-rose-500/40 transform hover:scale-105'
+                    : 'text-slate-700 hover:bg-rose-50 hover:text-rose-600 backdrop-blur-sm'
                 }`}
               >
                 <i className="fas fa-users mr-2"></i>
@@ -539,8 +535,8 @@ const App: React.FC = () => {
                 onClick={() => setPage('availability')}
                 className={`px-4 py-2 rounded-lg font-bold transition-all ${
                   currentPage === 'availability'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'text-slate-600 hover:bg-slate-100'
+                    ? 'bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 text-white shadow-lg shadow-rose-500/40 transform hover:scale-105'
+                    : 'text-slate-700 hover:bg-rose-50 hover:text-rose-600 backdrop-blur-sm'
                 }`}
               >
                 <i className="fas fa-calendar-check mr-2"></i>
@@ -566,29 +562,32 @@ const App: React.FC = () => {
                 <button 
                     onClick={handleAutoFill}
                     disabled={isAutoFilling}
-                    className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-full text-sm font-bold transition-all shadow-md disabled:opacity-50"
+                    className="flex items-center space-x-2 bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 hover:from-rose-400 hover:via-purple-400 hover:to-cyan-400 text-white px-5 py-2.5 rounded-full text-sm font-black transition-all shadow-lg shadow-rose-500/40 hover:shadow-xl hover:shadow-rose-500/60 disabled:opacity-50 transform hover:scale-105 active:scale-95 relative overflow-hidden group"
                 >
+                  <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></span>
+                  <span className="relative z-10">
                     <i className={`fas ${isAutoFilling ? 'fa-spinner fa-spin' : 'fa-robot'}`}></i>
                     <span>{isAutoFilling ? 'משבץ...' : 'שיבוץ אוטומטי'}</span>
+                  </span>
                 </button>
                 <button 
                     onClick={runAiAnalysis}
                     disabled={isAnalyzing}
-                    className="flex items-center space-x-2 bg-slate-900 hover:bg-black text-white px-5 py-2.5 rounded-full text-sm font-bold transition-all shadow-md disabled:opacity-50"
+                    className="flex items-center space-x-2 bg-gradient-to-r from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 text-white px-5 py-2.5 rounded-full text-sm font-black transition-all shadow-lg shadow-slate-900/50 hover:shadow-xl disabled:opacity-50 transform hover:scale-105 active:scale-95"
                 >
                     <i className={`fas ${isAnalyzing ? 'fa-spinner fa-spin' : 'fa-chart-line'}`}></i>
                     <span>{isAnalyzing ? 'מנתח...' : 'דו"ח ביצועים'}</span>
                 </button>
               </>
             )}
-            <div className="flex items-center space-x-3 ml-4 pl-4 border-l border-slate-200">
+            <div className="flex items-center space-x-3 ml-4 pl-4 border-l border-rose-200">
               <div className="text-right">
-                <p className="text-xs font-bold text-slate-600">{user.fullName}</p>
-                <p className="text-[10px] text-slate-400">{user.storeName || `Store #${user.storeId}`}</p>
+                <p className="text-xs font-bold text-slate-700">{user.fullName}</p>
+                <p className="text-[10px] text-slate-500">{user.storeName || `Store #${user.storeId}`}</p>
               </div>
               <button
                 onClick={handleLogout}
-                className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-md"
+                className="flex items-center space-x-2 bg-gradient-to-r from-red-500 to-red-400 hover:from-red-400 hover:to-red-300 text-white px-4 py-2 rounded-lg text-sm font-black transition-all shadow-lg shadow-red-500/40 hover:shadow-xl transform hover:scale-105 active:scale-95"
                 title="Logout"
               >
                 <i className="fas fa-sign-out-alt"></i>
@@ -607,13 +606,13 @@ const App: React.FC = () => {
         // Employees should only see availability page
         <EmployeeAvailability user={user} />
       ) : (
-        <main className="max-w-7xl mx-auto w-full px-4 lg:px-8 py-10 flex flex-col lg:flex-row gap-8">
+        <main className="relative z-10 max-w-7xl mx-auto w-full px-4 lg:px-8 py-10 flex flex-col lg:flex-row gap-8">
         <div className="flex-1 min-w-0">
           <KPIBanner kpis={kpis} />
 
           {aiAnalysis && (
-            <div className="mb-8 bg-white border-2 border-indigo-500/20 rounded-2xl overflow-hidden shadow-xl animate-in slide-in-from-top duration-500">
-                <div className="bg-indigo-600 px-6 py-4 flex items-center justify-between">
+            <div className="mb-8 bg-white/80 backdrop-blur-2xl border-2 border-rose-300/50 rounded-2xl overflow-hidden shadow-2xl shadow-rose-500/20 animate-in slide-in-from-top duration-500">
+                <div className="bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 px-6 py-4 flex items-center justify-between">
                     <h3 className="text-white font-bold flex items-center">
                         <i className="fas fa-magic mr-2"></i>
                         ניתוח אופטימיזציה חכם
@@ -628,31 +627,31 @@ const App: React.FC = () => {
             </div>
           )}
 
-          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-            <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-white">
+          <div className="bg-white/80 backdrop-blur-2xl rounded-3xl shadow-2xl shadow-rose-500/10 border border-rose-200/50 overflow-hidden">
+            <div className="p-8 border-b border-rose-200 flex items-center justify-between bg-gradient-to-r from-white to-rose-50/50">
                 <div>
-                    <h2 className="text-xl font-bold text-slate-900">לוח שיבוץ שבועי</h2>
-                    <p className="text-sm text-slate-500 mt-1">גרור עובדים מהרשימה כדי לשבץ למשמרות או השתמש בשיבוץ האוטומטי</p>
+                    <h2 className="text-xl font-black text-slate-800">לוח שיבוץ שבועי - <span className="text-2xl bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 bg-clip-text text-transparent">Shiftly</span></h2>
+                    <p className="text-sm text-slate-600 mt-1">גרור עובדים מהרשימה כדי לשבץ למשמרות או השתמש בשיבוץ האוטומטי</p>
                 </div>
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse min-w-[800px]">
                 <thead>
-                  <tr className="bg-slate-50">
-                    <th className="px-8 py-5 text-[11px] font-bold text-slate-400 uppercase tracking-widest border-r border-slate-100 w-32">יום</th>
-                    <th className="px-8 py-5 text-[11px] font-bold text-slate-400 uppercase tracking-widest">משמרת בוקר (09-15)</th>
-                    <th className="px-8 py-5 text-[11px] font-bold text-slate-400 uppercase tracking-widest">משמרת ערב (15-21)</th>
+                  <tr className="bg-gradient-to-r from-rose-50 to-purple-50">
+                    <th className="px-8 py-5 text-[11px] font-black text-slate-700 uppercase tracking-widest border-r border-rose-200 w-32">יום</th>
+                    <th className="px-8 py-5 text-[11px] font-black text-slate-700 uppercase tracking-widest">משמרת בוקר (09-15)</th>
+                    <th className="px-8 py-5 text-[11px] font-black text-slate-700 uppercase tracking-widest">משמרת ערב (15-21)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-rose-100">
                   {DAYS.map(day => {
                     const morningShift = shifts.find(s => s.day === day && s.type === 'Morning')!;
                     const afternoonShift = shifts.find(s => s.day === day && s.type === 'Afternoon')!;
                     
                     return (
                       <tr key={day} className="group">
-                        <td className="px-8 py-10 font-extrabold text-slate-900 border-r border-slate-100 bg-slate-50/30 group-hover:bg-slate-50 transition-colors">
+                        <td className="px-8 py-10 font-extrabold text-slate-800 border-r border-rose-200 bg-rose-50/50 group-hover:bg-rose-100 transition-colors">
                           {day}
                         </td>
                         <td className="px-8 py-6">
@@ -724,11 +723,11 @@ const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, assignedEmployee, onDrop, 
                           assignedEmployee.productivityScore > 70 ? 'text-orange-600 bg-orange-50' : 'text-red-600 bg-red-50';
 
         return (
-            <div className="relative group bg-white border border-slate-200 rounded-2xl p-4 flex items-center shadow-sm hover:shadow-md transition-all animate-in fade-in zoom-in duration-200">
-                <img src={assignedEmployee.avatar} className="w-12 h-12 rounded-full mr-4 border-2 border-white shadow-sm" />
+            <div className="relative group bg-white/90 backdrop-blur-sm border border-rose-200 rounded-2xl p-4 flex items-center shadow-lg hover:shadow-xl transition-all animate-in fade-in zoom-in duration-200 hover:scale-105">
+                <img src={assignedEmployee.avatar} className="w-12 h-12 rounded-full mr-4 border-2 border-rose-200 shadow-sm" />
                 <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-slate-900 truncate">{assignedEmployee.name}</p>
-                    <p className="text-xs text-slate-500 font-medium">${shift.targetSales.toLocaleString()} Target</p>
+                    <p className="text-sm font-bold text-slate-800 truncate">{assignedEmployee.name}</p>
+                    <p className="text-xs text-slate-600 font-medium">${shift.targetSales.toLocaleString()} Target</p>
                 </div>
                 <div className={`ml-3 px-3 py-1 rounded-full text-xs font-black ${scoreColor}`}>
                     {assignedEmployee.productivityScore}%
@@ -743,16 +742,16 @@ const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, assignedEmployee, onDrop, 
         );
     }
 
-    return (
+        return (
         <div 
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={onDropHandler}
-            className="border-2 border-dashed border-slate-200 rounded-2xl p-6 flex flex-col items-center justify-center text-slate-400 hover:border-red-400 hover:text-red-500 transition-all group min-h-[90px] relative cursor-pointer"
+            className="border-2 border-dashed border-rose-300 rounded-2xl p-6 flex flex-col items-center justify-center text-slate-400 hover:border-rose-400 hover:text-rose-500 hover:bg-rose-50 transition-all group min-h-[90px] relative cursor-pointer bg-white/50"
         >
             {isLoading ? (
                 <div className="flex flex-col items-center">
-                    <i className="fas fa-circle-notch fa-spin text-indigo-500 mb-2"></i>
+                    <i className="fas fa-circle-notch fa-spin text-rose-500 mb-2"></i>
                     <span className="text-[10px] font-bold uppercase">Thinking...</span>
                 </div>
             ) : (
@@ -761,7 +760,7 @@ const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, assignedEmployee, onDrop, 
                     <span className="text-[10px] font-bold uppercase tracking-widest">פנוי</span>
                     <button 
                         onClick={(e) => { e.stopPropagation(); onSuggest(); }}
-                        className="absolute bottom-2 right-2 bg-slate-100 hover:bg-indigo-500 hover:text-white p-2 rounded-lg text-slate-400 transition-all opacity-0 group-hover:opacity-100"
+                        className="absolute bottom-2 right-2 bg-white hover:bg-gradient-to-r hover:from-rose-500 hover:via-purple-500 hover:to-cyan-500 hover:text-white p-2 rounded-lg text-slate-400 transition-all opacity-0 group-hover:opacity-100 shadow-md"
                         title="Smart Suggestion"
                     >
                         <i className="fas fa-wand-magic-sparkles text-xs"></i>

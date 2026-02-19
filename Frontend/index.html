@@ -8,14 +8,138 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #f8fafc;
+            background: linear-gradient(135deg, #fef3e7 0%, #fce7f3 25%, #f3e8ff 50%, #e0f2fe 75%, #fef3e7 100%);
+            background-size: 400% 400%;
+            animation: gradientShift 20s ease infinite;
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            position: relative;
+            overflow-x: hidden;
         }
+        
+        /* Add custom colors for rose (coral-like) */
+        .bg-coral-400 { background-color: #fb7185; }
+        .bg-coral-500 { background-color: #f43f5e; }
+        .text-coral-500 { color: #f43f5e; }
+        .text-coral-600 { color: #e11d48; }
+        .border-coral-300 { border-color: #fda4af; }
+        .border-coral-400 { border-color: #fb7185; }
+        .ring-coral-400 { --tw-ring-color: #fb7185; }
+        .shadow-coral-500 { --tw-shadow-color: rgba(244, 63, 94, 0.5); }
+        
+        /* Animated gradient background - soft pastels */
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        /* Soft floating particles */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                radial-gradient(circle at 20% 50%, rgba(244, 63, 94, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(168, 85, 247, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 40% 20%, rgba(34, 211, 238, 0.08) 0%, transparent 50%);
+            animation: particleMove 25s ease-in-out infinite;
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        @keyframes particleMove {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(30px, -30px) scale(1.1); }
+            66% { transform: translate(-20px, 20px) scale(0.9); }
+        }
+        
+        /* Soft floating orb */
+        body::after {
+            content: '';
+            position: fixed;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(244, 63, 94, 0.1) 0%, transparent 70%);
+            border-radius: 50%;
+            top: -300px;
+            left: -300px;
+            animation: floatOrb 30s ease-in-out infinite;
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        @keyframes floatOrb {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            25% { transform: translate(150px, 150px) scale(1.2); }
+            50% { transform: translate(300px, -100px) scale(0.8); }
+            75% { transform: translate(100px, 200px) scale(1.1); }
+        }
+        
         .drag-ghost {
             opacity: 0.5;
             transform: scale(0.95);
+        }
+        
+        html {
+            scroll-behavior: smooth;
+        }
+        
+        /* Custom scrollbar - soft colors */
+        ::-webkit-scrollbar {
+            width: 12px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(254, 243, 231, 0.5);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: linear-gradient(180deg, #f43f5e, #a855f7, #22d3ee);
+            background-size: 100% 200%;
+            animation: scrollbarGradient 4s ease infinite;
+            border-radius: 10px;
+            border: 2px solid rgba(254, 243, 231, 0.3);
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(180deg, #e11d48, #9333ea, #06b6d4);
+            background-size: 100% 200%;
+        }
+        
+        @keyframes scrollbarGradient {
+            0%, 100% { background-position: 0% 0%; }
+            50% { background-position: 0% 100%; }
+        }
+        
+        /* Glassmorphism effect */
+        .glass {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+        
+        /* Shimmer effect */
+        @keyframes shimmer {
+            0% { background-position: -1000px 0; }
+            100% { background-position: 1000px 0; }
+        }
+        
+        .shimmer {
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            background-size: 1000px 100%;
+            animation: shimmer 3s infinite;
         }
     </style>
 <script type="importmap">

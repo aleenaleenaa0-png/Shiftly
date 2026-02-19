@@ -175,13 +175,13 @@ const EmployeeAvailability: React.FC<EmployeeAvailabilityProps> = ({ user }) => 
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-cyan-50/20 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl shadow-blue-500/10 border border-slate-200/50 p-6 mb-6">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
-              <h1 className="text-3xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent mb-2">
+              <h1 className="text-3xl font-black bg-gradient-to-r from-blue-600 via-cyan-600 to-blue-500 bg-clip-text text-transparent mb-2">
                 My Availability
               </h1>
               <p className="text-slate-600">Set your availability for shifts this week</p>
@@ -200,7 +200,7 @@ const EmployeeAvailability: React.FC<EmployeeAvailabilityProps> = ({ user }) => 
                 <i className="fas fa-chevron-left mr-2"></i>
                 Previous Week
               </button>
-              <div className="px-6 py-2 bg-indigo-100 rounded-lg font-bold text-indigo-700">
+              <div className="px-6 py-2 bg-blue-100 rounded-lg font-bold text-blue-700">
                 {getWeekRange()}
               </div>
               <button
@@ -231,7 +231,7 @@ const EmployeeAvailability: React.FC<EmployeeAvailabilityProps> = ({ user }) => 
         {/* Loading State */}
         {loading ? (
           <div className="bg-white rounded-2xl shadow-xl p-12 text-center">
-            <i className="fas fa-spinner fa-spin text-4xl text-indigo-500 mb-4"></i>
+            <i className="fas fa-spinner fa-spin text-4xl text-blue-500 mb-4"></i>
             <p className="text-slate-600 font-bold">Loading shifts...</p>
           </div>
         ) : shifts.length === 0 ? (
@@ -304,7 +304,7 @@ const EmployeeAvailability: React.FC<EmployeeAvailabilityProps> = ({ user }) => 
                               </button>
                             </div>
                             {shift.employeeId && (
-                              <p className="text-xs text-indigo-600 mt-2">
+                              <p className="text-xs text-blue-600 mt-2">
                                 <i className="fas fa-user-check mr-1"></i>
                                 Assigned to: {shift.employeeName || 'You'}
                               </p>
