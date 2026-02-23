@@ -169,18 +169,21 @@ namespace Backend.Controllers
                 {
                     employee.EmployeeId,
                     employee.FirstName,
-                    employee.LastName,
+                    // Note: LastName is not in Access Employees table
                     employee.HourlyWage,
                     employee.ProductivityScore,
                     employee.StoreId,
                     StoreName = employee.Store?.Name,
-                    FullName = $"{employee.FirstName} {employee.LastName}",
+                    FullName = employee.FirstName, // Username is stored in FirstName
                     Availabilities = employee.Availabilities.Select(a => new
                     {
                         a.AvailabilityId,
-                        a.DayOfWeek,
-                        a.StartTime,
-                        a.EndTime
+                        a.ShiftId,
+                        ShiftInfo = a.Shift != null ? new { 
+                            StartTime = a.Shift.StartTime, 
+                            EndTime = a.Shift.EndTime 
+                        } : null,
+                        a.IsAvailable
                     })
                 });
             }
@@ -205,7 +208,7 @@ namespace Backend.Controllers
             try
             {
                 // Log received data for debugging
-                Console.WriteLine($"CreateEmployee received - FirstName: {dto?.FirstName}, LastName: {dto?.LastName}, StoreId: {dto?.StoreId}");
+                Console.WriteLine($"CreateEmployee received - FirstName: {dto?.FirstName}, StoreId: {dto?.StoreId}");
 
                 if (dto == null)
                 {
@@ -213,9 +216,10 @@ namespace Backend.Controllers
                 }
 
                 // Validate required fields
-                if (string.IsNullOrWhiteSpace(dto.FirstName) || string.IsNullOrWhiteSpace(dto.LastName))
+                // Note: Access Employees table only has FirstName, not LastName
+                if (string.IsNullOrWhiteSpace(dto.FirstName))
                 {
-                    return BadRequest(new { error = "First name and last name are required" });
+                    return BadRequest(new { error = "First name is required" });
                 }
 
                 if (dto.StoreId <= 0)
@@ -255,13 +259,13 @@ namespace Backend.Controllers
                 var employee = new Employee
                 {
                     FirstName = dto.FirstName.Trim(),
-                    LastName = dto.LastName.Trim(),
+                    // Note: LastName is not stored in Access Employees table
                     HourlyWage = dto.HourlyWage,
                     ProductivityScore = dto.ProductivityScore,
                     StoreId = dto.StoreId
                 };
 
-                Console.WriteLine($"Creating employee - FirstName: {employee.FirstName}, LastName: {employee.LastName}, StoreId: {employee.StoreId}");
+                Console.WriteLine($"Creating employee - FirstName: {employee.FirstName}, StoreId: {employee.StoreId}");
 
                 _db.Employees.Add(employee);
                 await _db.SaveChangesAsync();
@@ -272,7 +276,7 @@ namespace Backend.Controllers
                 {
                     employee.EmployeeId,
                     employee.FirstName,
-                    employee.LastName,
+                    // Note: LastName is not in Access Employees table
                     employee.HourlyWage,
                     employee.ProductivityScore,
                     employee.StoreId
@@ -315,7 +319,7 @@ namespace Backend.Controllers
                 }
 
                 employee.FirstName = dto.FirstName;
-                employee.LastName = dto.LastName;
+                // Note: LastName is not stored in Access Employees table
                 employee.HourlyWage = dto.HourlyWage;
                 employee.ProductivityScore = dto.ProductivityScore;
                 employee.StoreId = dto.StoreId;
@@ -372,7 +376,7 @@ namespace Backend.Controllers
     public class CreateEmployeeDto
     {
         public string FirstName { get; set; } = string.Empty;
-        public string LastName { get; set; } = string.Empty;
+        // Note: LastName is not in Access Employees table
         public decimal HourlyWage { get; set; }
         public double ProductivityScore { get; set; }
         public int StoreId { get; set; }
@@ -381,7 +385,7 @@ namespace Backend.Controllers
     public class UpdateEmployeeDto
     {
         public string FirstName { get; set; } = string.Empty;
-        public string LastName { get; set; } = string.Empty;
+        // Note: LastName is not in Access Employees table
         public decimal HourlyWage { get; set; }
         public double ProductivityScore { get; set; }
         public int StoreId { get; set; }

@@ -6,12 +6,14 @@ import KPIBanner from './components/KPIBanner';
 import EmployeeSidebar from './components/EmployeeSidebar';
 import EmployeeManagement from './components/EmployeeManagement';
 import EmployeeAvailability from './components/EmployeeAvailability';
+import UserManagement from './components/UserManagement';
+import WorkerPortal from './components/WorkerPortal';
 import Login from './components/Login';
 import SignUp from './components/SignUp';
 import Logo from './components/Logo';
 import { getScheduleOptimizationInsights, getSmartSuggestion, autoGenerateSchedule } from './geminiService';
 
-type Page = 'schedule' | 'employees' | 'availability';
+type Page = 'schedule' | 'employees' | 'availability' | 'users';
 
 interface User {
   userId: number;
@@ -43,7 +45,7 @@ const App: React.FC = () => {
       return;
     }
     
-    // Managers can access schedule and employees pages, but not availability
+    // Managers can access schedule, employees, and users pages, but not availability
     if (isManager && page === 'availability') {
       setCurrentPage('schedule');
       return;
@@ -68,6 +70,8 @@ const App: React.FC = () => {
   const [suggestionLoading, setSuggestionLoading] = useState<string | null>(null);
   const [backendStatus, setBackendStatus] = useState<string | null>(null);
   const [backendError, setBackendError] = useState<string | null>(null);
+  const [shiftAvailabilityMap, setShiftAvailabilityMap] = useState<Map<string, number[]>>(new Map()); // shiftId -> employeeIds
+  const [employeeAvailabilityCount, setEmployeeAvailabilityCount] = useState<Map<string, number>>(new Map()); // employeeId -> count
 
   useEffect(() => {
     let totalCost = 0;
@@ -148,25 +152,126 @@ const App: React.FC = () => {
     checkBackend();
   }, []);
 
+  // Fetch availability for all shifts and employees
+  useEffect(() => {
+    if (!user || (user.role !== 'Manager' && user.userType !== 'Manager')) return;
+
+    const fetchAvailability = async () => {
+      try {
+        // First, fetch all shifts from backend to get real shift IDs
+        const shiftsResponse = await fetch(`/api/shifts?storeId=${user.storeId}`, {
+          credentials: 'include'
+        });
+        let backendShifts: any[] = [];
+        if (shiftsResponse.ok) {
+          backendShifts = await shiftsResponse.json();
+        }
+
+        // Create a mapping from frontend shift (day + type) to backend shift ID
+        const shiftIdMap = new Map<string, number>();
+        shifts.forEach(frontendShift => {
+          // Find matching backend shift by day and time
+          const matchingBackendShift = backendShifts.find((bs: any) => {
+            const shiftDate = new Date(bs.StartTime || bs.startTime);
+            const shiftDay = shiftDate.toLocaleDateString('en-US', { weekday: 'long' });
+            const shiftStart = new Date(bs.StartTime || bs.startTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false });
+            const isMorning = frontendShift.type === 'Morning' && (shiftStart.startsWith('9') || shiftStart.startsWith('09'));
+            const isAfternoon = frontendShift.type === 'Afternoon' && (shiftStart.startsWith('15') || shiftStart.startsWith('3'));
+            return shiftDay === frontendShift.day && (isMorning || isAfternoon);
+          });
+          if (matchingBackendShift) {
+            shiftIdMap.set(frontendShift.id, matchingBackendShift.ShiftId || matchingBackendShift.shiftId);
+          }
+        });
+
+        // Fetch availability for each shift using backend shift IDs
+        const shiftAvailabilityPromises = Array.from(shiftIdMap.entries()).map(async ([frontendShiftId, backendShiftId]) => {
+          try {
+            const response = await fetch(`/api/availabilities/for-shift/${backendShiftId}`, {
+              credentials: 'include'
+            });
+            if (response.ok) {
+              const data = await response.json();
+              const employeeIds = data.map((a: any) => a.EmployeeId || a.employeeId).filter((id: any) => id);
+              return { shiftId: frontendShiftId, employeeIds };
+            }
+          } catch (err) {
+            console.warn(`Failed to fetch availability for shift ${backendShiftId}:`, err);
+          }
+          return { shiftId: frontendShiftId, employeeIds: [] };
+        });
+
+        const shiftResults = await Promise.all(shiftAvailabilityPromises);
+        const newShiftMap = new Map<string, number[]>();
+        shiftResults.forEach(result => {
+          newShiftMap.set(result.shiftId, result.employeeIds);
+        });
+        setShiftAvailabilityMap(newShiftMap);
+
+        // Fetch availability count for each employee
+        // First, get all employees from backend
+        const employeesResponse = await fetch('/api/employees', {
+          credentials: 'include'
+        });
+        let backendEmployees: any[] = [];
+        if (employeesResponse.ok) {
+          backendEmployees = await employeesResponse.json();
+        }
+
+        // Map frontend employee IDs to backend employee IDs
+        const employeeIdMap = new Map<string, number>();
+        employees.forEach(frontendEmp => {
+          const matchingBackendEmp = backendEmployees.find((be: any) => 
+            be.FirstName === frontendEmp.name.split(' ')[0] || 
+            be.EmployeeId?.toString() === frontendEmp.id
+          );
+          if (matchingBackendEmp) {
+            employeeIdMap.set(frontendEmp.id, matchingBackendEmp.EmployeeId || matchingBackendEmp.employeeId);
+          }
+        });
+
+        const employeeAvailabilityPromises = Array.from(employeeIdMap.entries()).map(async ([frontendEmpId, backendEmpId]) => {
+          try {
+            const response = await fetch(`/api/availabilities/for-employee/${backendEmpId}`, {
+              credentials: 'include'
+            });
+            if (response.ok) {
+              const data = await response.json();
+              return { employeeId: frontendEmpId, count: data.length || 0 };
+            }
+          } catch (err) {
+            console.warn(`Failed to fetch availability for employee ${backendEmpId}:`, err);
+          }
+          return { employeeId: frontendEmpId, count: 0 };
+        });
+
+        const employeeResults = await Promise.all(employeeAvailabilityPromises);
+        const newEmployeeMap = new Map<string, number>();
+        employeeResults.forEach(result => {
+          newEmployeeMap.set(result.employeeId, result.count);
+        });
+        setEmployeeAvailabilityCount(newEmployeeMap);
+      } catch (err) {
+        console.error('Error fetching availability:', err);
+      }
+    };
+
+    fetchAvailability();
+    // Refresh every 5 seconds to catch updates
+    const interval = setInterval(fetchAvailability, 5000);
+    return () => clearInterval(interval);
+  }, [shifts, employees, user]);
+
   const handleLoginSuccess = (userData: User) => {
     setUser(userData);
-    // If employee, redirect to availability page; managers go to schedule
-    if (userData.role === 'Employee' || userData.userType === 'Employee') {
-      setCurrentPage('availability');
-    } else {
+    // If employee, they will see WorkerPortal (no page navigation needed)
+    // Managers go to schedule page
+    if (userData.role === 'Manager' || userData.userType === 'Manager') {
       setCurrentPage('schedule');
     }
   };
   
-  // Ensure employees can only see availability page - redirect if they try to access other pages
-  useEffect(() => {
-    if (user) {
-      const isEmployee = user.role === 'Employee' || user.userType === 'Employee';
-      if (isEmployee && currentPage !== 'availability') {
-        setCurrentPage('availability');
-      }
-    }
-  }, [user, currentPage]);
+  // Employees see WorkerPortal - no page navigation needed
 
   const handleLogout = async () => {
     try {
@@ -569,33 +674,33 @@ const App: React.FC = () => {
             
             {/* Only show manager pages for managers */}
             {(user.role === 'Manager' || user.userType === 'Manager') && (
-              <button
-                onClick={() => setPage('employees')}
-                className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all flex items-center ${
-                  currentPage === 'employees'
-                    ? 'bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 text-white shadow-md shadow-rose-500/30 transform hover:scale-105'
-                    : 'text-slate-600 hover:bg-rose-50 hover:text-rose-600'
-                }`}
-              >
-                <i className="fas fa-users mr-2"></i>
-                <span>Employees</span>
-              </button>
+              <>
+                <button
+                  onClick={() => setPage('employees')}
+                  className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all flex items-center ${
+                    currentPage === 'employees'
+                      ? 'bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 text-white shadow-md shadow-rose-500/30 transform hover:scale-105'
+                      : 'text-slate-600 hover:bg-rose-50 hover:text-rose-600'
+                  }`}
+                >
+                  <i className="fas fa-users mr-2"></i>
+                  <span>Employees</span>
+                </button>
+                <button
+                  onClick={() => setPage('users')}
+                  className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all flex items-center ${
+                    currentPage === 'users'
+                      ? 'bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 text-white shadow-md shadow-rose-500/30 transform hover:scale-105'
+                      : 'text-slate-600 hover:bg-rose-50 hover:text-rose-600'
+                  }`}
+                >
+                  <i className="fas fa-user-shield mr-2"></i>
+                  <span>Users</span>
+                </button>
+              </>
             )}
             
-            {/* Only show availability page for employees */}
-            {(user.role === 'Employee' || user.userType === 'Employee') && (
-              <button
-                onClick={() => setPage('availability')}
-                className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all flex items-center ${
-                  currentPage === 'availability'
-                    ? 'bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 text-white shadow-md shadow-rose-500/30 transform hover:scale-105'
-                    : 'text-slate-600 hover:bg-rose-50 hover:text-rose-600'
-                }`}
-              >
-                <i className="fas fa-calendar-check mr-2"></i>
-                <span>My Availability</span>
-              </button>
-            )}
+            {/* Employees don't see navigation - they have their own portal */}
           </div>
 
           {/* Right Side: Tools and User Info */}
@@ -665,12 +770,14 @@ const App: React.FC = () => {
         </div>
       </nav>
 
-      {currentPage === 'employees' ? (
+      {(user.role === 'Employee' || user.userType === 'Employee') ? (
+        // Employees see the Worker Portal
+        <WorkerPortal user={user} onLogout={handleLogout} />
+      ) : currentPage === 'employees' ? (
         <EmployeeManagement />
+      ) : currentPage === 'users' ? (
+        <UserManagement />
       ) : currentPage === 'availability' ? (
-        <EmployeeAvailability user={user} />
-      ) : (user.role === 'Employee' || user.userType === 'Employee') ? (
-        // Employees should only see availability page
         <EmployeeAvailability user={user} />
       ) : (
         <main className="relative z-10 max-w-7xl mx-auto w-full px-4 lg:px-8 py-10 flex flex-col lg:flex-row gap-8">
@@ -729,6 +836,8 @@ const App: React.FC = () => {
                             onSuggest={() => requestSmartSuggestion(morningShift)}
                             isLoading={suggestionLoading === morningShift.id}
                             assignedEmployee={employees.find(e => e.id === morningShift.assignedEmployeeId)}
+                            availableEmployeeIds={shiftAvailabilityMap.get(morningShift.id) || []}
+                            allEmployees={employees}
                           />
                         </td>
                         <td className="px-8 py-6">
@@ -739,6 +848,8 @@ const App: React.FC = () => {
                             onSuggest={() => requestSmartSuggestion(afternoonShift)}
                             isLoading={suggestionLoading === afternoonShift.id}
                             assignedEmployee={employees.find(e => e.id === afternoonShift.assignedEmployeeId)}
+                            availableEmployeeIds={shiftAvailabilityMap.get(afternoonShift.id) || []}
+                            allEmployees={employees}
                           />
                         </td>
                       </tr>
@@ -750,7 +861,11 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <EmployeeSidebar employees={employees} onDragStart={handleDragStart} />
+        <EmployeeSidebar 
+          employees={employees} 
+          onDragStart={handleDragStart}
+          employeeAvailabilityCount={employeeAvailabilityCount}
+        />
       </main>
       )}
 
@@ -768,9 +883,11 @@ interface ShiftSlotProps {
     onRemove: () => void;
     onSuggest: () => void;
     isLoading?: boolean;
+    availableEmployeeIds?: number[];
+    allEmployees?: Employee[];
 }
 
-const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, assignedEmployee, onDrop, onRemove, onSuggest, isLoading }) => {
+const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, assignedEmployee, onDrop, onRemove, onSuggest, isLoading, availableEmployeeIds = [], allEmployees = [] }) => {
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault();
         e.currentTarget.classList.add('ring-4', 'ring-red-500/20', 'bg-red-50/50', 'border-red-400');
@@ -809,6 +926,10 @@ const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, assignedEmployee, onDrop, 
         );
     }
 
+        const availableEmployees = allEmployees.filter(emp => 
+            availableEmployeeIds.includes(parseInt(emp.id))
+        );
+
         return (
         <div 
             onDragOver={handleDragOver}
@@ -825,6 +946,14 @@ const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, assignedEmployee, onDrop, 
                 <>
                     <i className="fas fa-plus mb-2 opacity-30 group-hover:scale-125 transition-transform"></i>
                     <span className="text-[10px] font-bold uppercase tracking-widest">פנוי</span>
+                    {availableEmployees.length > 0 && (
+                        <div className="mt-2 flex items-center space-x-1">
+                            <span className="text-[9px] text-green-600 font-bold">
+                                <i className="fas fa-users mr-1"></i>
+                                {availableEmployees.length} available
+                            </span>
+                        </div>
+                    )}
                     <button 
                         onClick={(e) => { e.stopPropagation(); onSuggest(); }}
                         className="absolute bottom-2 right-2 bg-white hover:bg-gradient-to-r hover:from-rose-500 hover:via-purple-500 hover:to-cyan-500 hover:text-white p-2 rounded-lg text-slate-400 transition-all opacity-0 group-hover:opacity-100 shadow-md"

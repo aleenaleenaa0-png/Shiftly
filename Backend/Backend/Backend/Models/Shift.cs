@@ -25,6 +25,9 @@ namespace Backend.Models
 
         // Calculated match score for the assigned employee
         public double? MatchScore { get; set; }
+
+        // Many-to-many relationship with Employees through Availabilities
+        public ICollection<Availability> Availabilities { get; set; } = new List<Availability>();
     }
 }
 

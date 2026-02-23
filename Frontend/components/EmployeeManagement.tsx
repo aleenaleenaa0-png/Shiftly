@@ -9,6 +9,7 @@ interface BackendEmployee {
   storeId: number;
   storeName?: string;
   fullName?: string;
+  availabilityCount?: number; // Number of shifts they're available for
 }
 
 interface Store {
@@ -64,7 +65,25 @@ const EmployeeManagement: React.FC = () => {
         fullName: emp.FullName || emp.fullName
       }));
       
-      setEmployees(mappedEmployees);
+      // Fetch availability count for each employee
+      const employeesWithAvailability = await Promise.all(
+        mappedEmployees.map(async (emp: BackendEmployee) => {
+          try {
+            const availResponse = await fetch(`/api/availabilities/for-employee/${emp.employeeId}`, {
+              credentials: 'include'
+            });
+            if (availResponse.ok) {
+              const availData = await availResponse.json();
+              return { ...emp, availabilityCount: availData.length || 0 };
+            }
+          } catch (err) {
+            console.warn(`Failed to fetch availability for employee ${emp.employeeId}:`, err);
+          }
+          return { ...emp, availabilityCount: 0 };
+        })
+      );
+      
+      setEmployees(employeesWithAvailability);
       setError(null);
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to load employees';
@@ -389,6 +408,7 @@ const EmployeeManagement: React.FC = () => {
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Store</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Hourly Wage</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Productivity</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Availability</th>
                     <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
@@ -415,6 +435,18 @@ const EmployeeManagement: React.FC = () => {
                           <span className={`px-3 py-1 rounded-full text-xs font-bold ${scoreColor}`}>
                             {employee.productivityScore.toFixed(1)}/10
                           </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center space-x-2">
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                              (employee.availabilityCount || 0) > 0 
+                                ? 'bg-green-100 text-green-700' 
+                                : 'bg-slate-100 text-slate-500'
+                            }`}>
+                              <i className="fas fa-calendar-check mr-1"></i>
+                              {employee.availabilityCount || 0} shifts
+                            </span>
+                          </div>
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end space-x-2">

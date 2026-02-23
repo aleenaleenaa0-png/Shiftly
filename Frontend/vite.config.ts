@@ -12,6 +12,15 @@ export default defineConfig(({ mode }) => {
           '/api': {
             target: 'http://localhost:5224',
             changeOrigin: true,
+            secure: false,
+            ws: true,
+            configure: (proxy, _options) => {
+              proxy.on('error', (err, _req, _res) => {
+                console.log('Backend proxy error:', err.message);
+                console.log('Make sure the backend server is running on http://localhost:5224');
+                console.log('Run: cd Backend/Backend/Backend && dotnet run');
+              });
+            },
           },
         },
       },

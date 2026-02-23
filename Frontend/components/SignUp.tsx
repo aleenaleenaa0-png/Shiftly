@@ -19,7 +19,7 @@ const SignUp: React.FC<SignUpProps> = ({ onSignUpSuccess, onSwitchToLogin }) => 
     email: '',
     password: '',
     confirmPassword: '',
-    fullName: '',
+    username: '',
     storeId: 0
   });
   const [stores, setStores] = useState<Store[]>([]);
@@ -148,13 +148,13 @@ const SignUp: React.FC<SignUpProps> = ({ onSignUpSuccess, onSwitchToLogin }) => 
       email: formData.email.trim(),
       password: formData.password.trim(),
       confirmPassword: formData.confirmPassword.trim(),
-      fullName: formData.fullName.trim(),
+      username: formData.username.trim(),
       storeId: formData.storeId
     };
 
     // Validation
-    if (!trimmedData.fullName) {
-      setError('Full name is required');
+    if (!trimmedData.username) {
+      setError('Username is required');
       return;
     }
 
@@ -187,7 +187,7 @@ const SignUp: React.FC<SignUpProps> = ({ onSignUpSuccess, onSwitchToLogin }) => 
     const payload = {
       email: trimmedData.email,
       password: trimmedData.password,
-      fullName: trimmedData.fullName,
+      username: trimmedData.username,
       storeId: Number(trimmedData.storeId) // Ensure it's a number
     };
 
@@ -207,11 +207,33 @@ const SignUp: React.FC<SignUpProps> = ({ onSignUpSuccess, onSwitchToLogin }) => 
         body: JSON.stringify(payload),
       });
 
-      const data = await response.json();
+      // Check if response has content before parsing JSON
+      const responseText = await response.text();
+      let data: any = {};
+      
+      if (responseText && responseText.trim().length > 0) {
+        try {
+          data = JSON.parse(responseText);
+        } catch (parseError) {
+          console.error('Failed to parse JSON:', parseError);
+          console.error('Response text:', responseText);
+          // If parsing fails, create a basic error object
+          if (response.ok) {
+            data = { success: true, message: 'Account created successfully' };
+          } else {
+            data = { error: 'Invalid response from server', message: responseText };
+          }
+        }
+      } else if (response.ok) {
+        // Empty response but OK status - assume success
+        data = { success: true, message: 'Account created successfully' };
+      } else {
+        data = { error: 'Sign up failed', message: 'No response from server' };
+      }
 
       if (!response.ok) {
         if (response.status === 503) {
-          throw new Error(data.message || 'Database is locked');
+          throw new Error(data.message || data.error || 'Database is locked');
         }
         if (response.status === 409) {
           throw new Error(data.error || 'Email already registered');
@@ -229,10 +251,15 @@ const SignUp: React.FC<SignUpProps> = ({ onSignUpSuccess, onSwitchToLogin }) => 
         alert('Account created successfully! Please login with your credentials.');
         onSignUpSuccess();
       } else {
-        throw new Error('Invalid response from server');
+        throw new Error(data.error || 'Invalid response from server');
       }
     } catch (err: any) {
-      setError(err.message || 'Sign up failed. Please try again.');
+      // Handle JSON parsing errors specifically
+      if (err.message && err.message.includes('JSON')) {
+        setError('Server response error. Please try again.');
+      } else {
+        setError(err.message || 'Sign up failed. Please try again.');
+      }
       console.error('Sign up error:', err);
     } finally {
       setLoading(false);
@@ -364,17 +391,18 @@ const SignUp: React.FC<SignUpProps> = ({ onSignUpSuccess, onSwitchToLogin }) => 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-2">
-                Full Name *
+                Username *
               </label>
               <input
                 type="text"
-                name="fullName"
-                value={formData.fullName}
+                name="username"
+                value={formData.username}
                 onChange={handleInputChange}
                 required
                 className="w-full px-4 py-3 bg-white/90 backdrop-blur-sm border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-400 focus:border-rose-400 transition-all hover:border-rose-300 hover:bg-white text-slate-800 placeholder-slate-400"
-                placeholder="John Doe"
+                placeholder="johndoe"
               />
+              <p className="text-xs text-slate-500 mt-1">Choose a unique username for your account</p>
             </div>
 
             <div>
@@ -412,32 +440,70 @@ const SignUp: React.FC<SignUpProps> = ({ onSignUpSuccess, onSwitchToLogin }) => 
                     onClick={async () => {
                       try {
                         setLoadingStores(true);
+                        setError(null);
                         const res = await fetch('/api/stores/seed', {
                           method: 'POST',
                           credentials: 'include'
                         });
-                        const data = await res.json();
+                        
+                        // Check if response has content before parsing JSON
+                        const responseText = await res.text();
+                        let data: any = {};
+                        
+                        if (responseText && responseText.trim().length > 0) {
+                          try {
+                            data = JSON.parse(responseText);
+                          } catch (parseError) {
+                            console.error('Failed to parse JSON:', parseError);
+                            console.error('Response text:', responseText);
+                            // If it's not JSON but response is OK, assume success
+                            if (res.ok) {
+                              data = { success: true, message: 'Stores seeded successfully' };
+                            } else {
+                              data = { error: 'Invalid response from server' };
+                            }
+                          }
+                        } else if (res.ok) {
+                          // Empty response but OK status - assume success
+                          data = { success: true, message: 'Stores seeded successfully' };
+                        } else {
+                          data = { error: 'Failed to seed stores' };
+                        }
+                        
                         if (res.ok) {
-                          alert('Stores seeded successfully! Refreshing...');
+                          alert(data.message || 'Stores seeded successfully! Refreshing...');
                           // Refresh stores
                           const storesRes = await fetch('/api/stores', { credentials: 'include' });
                           if (storesRes.ok) {
-                            const storesData = await storesRes.json();
-                            const mappedStores = storesData.map((s: any) => ({
-                              storeId: s.StoreId || s.storeId,
-                              name: s.Name || s.name,
-                              location: s.Location || s.location
-                            }));
-                            setStores(mappedStores);
-                            if (mappedStores.length > 0) {
-                              setFormData(prev => ({ ...prev, storeId: mappedStores[0].storeId }));
+                            const storesText = await storesRes.text();
+                            if (storesText && storesText.trim().length > 0) {
+                              try {
+                                const storesData = JSON.parse(storesText);
+                                const mappedStores = Array.isArray(storesData) ? storesData.map((s: any) => ({
+                                  storeId: s.StoreId || s.storeId,
+                                  name: s.Name || s.name,
+                                  location: s.Location || s.location
+                                })) : [];
+                                setStores(mappedStores);
+                                if (mappedStores.length > 0) {
+                                  setFormData(prev => ({ ...prev, storeId: mappedStores[0].storeId }));
+                                }
+                              } catch (parseError) {
+                                console.error('Failed to parse stores JSON:', parseError);
+                                setError('Stores seeded but failed to load store list. Please refresh the page.');
+                              }
                             }
                           }
                         } else {
-                          alert(`Error: ${data.message || data.error || 'Failed to seed stores'}`);
+                          const errorMsg = data.message || data.error || 'Failed to seed stores';
+                          setError(errorMsg);
+                          alert(`Error: ${errorMsg}`);
                         }
                       } catch (err: any) {
-                        alert(`Error: ${err.message}`);
+                        const errorMsg = err.message || 'Failed to seed stores';
+                        setError(errorMsg);
+                        alert(`Error: ${errorMsg}`);
+                        console.error('Seed stores error:', err);
                       } finally {
                         setLoadingStores(false);
                       }

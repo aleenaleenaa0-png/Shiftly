@@ -33,10 +33,13 @@ namespace Backend.Controllers
                     {
                         a.AvailabilityId,
                         a.EmployeeId,
-                        EmployeeName = a.Employee != null ? $"{a.Employee.FirstName} {a.Employee.LastName}" : null,
-                        a.DayOfWeek,
-                        a.StartTime,
-                        a.EndTime
+                        EmployeeName = a.Employee != null ? a.Employee.FirstName : null,
+                        a.ShiftId,
+                        ShiftInfo = a.Shift != null ? new { 
+                            StartTime = a.Shift.StartTime, 
+                            EndTime = a.Shift.EndTime 
+                        } : null,
+                        a.IsAvailable
                     })
                     .ToListAsync();
 
@@ -67,10 +70,13 @@ namespace Backend.Controllers
                 {
                     availability.AvailabilityId,
                     availability.EmployeeId,
-                    EmployeeName = availability.Employee != null ? $"{availability.Employee.FirstName} {availability.Employee.LastName}" : null,
-                    availability.DayOfWeek,
-                    availability.StartTime,
-                    availability.EndTime
+                    EmployeeName = availability.Employee != null ? availability.Employee.FirstName : null,
+                    availability.ShiftId,
+                    ShiftInfo = availability.Shift != null ? new { 
+                        StartTime = availability.Shift.StartTime, 
+                        EndTime = availability.Shift.EndTime 
+                    } : null,
+                    availability.IsAvailable
                 });
             }
             catch (Exception ex)
@@ -98,14 +104,13 @@ namespace Backend.Controllers
                         {
                             await _db.Database.ExecuteSqlRawAsync(@"
                                 CREATE TABLE Availabilities (
-                                    AvailabilityId AUTOINCREMENT PRIMARY KEY,
+                                    AvailabilityID AUTOINCREMENT PRIMARY KEY,
                                     EmployeeId INTEGER NOT NULL,
-                                    DayOfWeek INTEGER NOT NULL,
-                                    StartTime DOUBLE NOT NULL,
-                                    EndTime DOUBLE NOT NULL
+                                    ShiftId INTEGER NOT NULL,
+                                    IsAvailable YESNO NOT NULL
                                 )
                             ");
-                            Console.WriteLine("✓ Created Availabilities table");
+                            Console.WriteLine("✓ Created Availabilities table with Access structure");
                         }
                         catch (Exception createEx)
                         {
@@ -126,9 +131,8 @@ namespace Backend.Controllers
                 var availability = new Availability
                 {
                     EmployeeId = dto.EmployeeId,
-                    DayOfWeek = dto.DayOfWeek,
-                    StartTime = dto.StartTime,
-                    EndTime = dto.EndTime
+                    ShiftId = dto.ShiftId,
+                    IsAvailable = dto.IsAvailable
                 };
 
                 _db.Availabilities.Add(availability);
@@ -143,36 +147,43 @@ namespace Backend.Controllers
         }
 
         // POST: api/Availabilities/toggle
-        // Toggle availability for a specific shift (creates or deletes availability based on shift time)
+        // Toggle availability for a specific shift (Access structure: EmployeeId + ShiftId + IsAvailable)
         [HttpPost("toggle")]
         public async Task<IActionResult> ToggleShiftAvailability([FromBody] ToggleShiftAvailabilityDto dto)
         {
             try
             {
-                // Ensure Availabilities table exists
+                Console.WriteLine("═══════════════════════════════════════════════════════");
+                Console.WriteLine($"TOGGLE AVAILABILITY REQUEST");
+                Console.WriteLine($"EmployeeId: {dto.EmployeeId}, ShiftId: {dto.ShiftId}");
+                Console.WriteLine("═══════════════════════════════════════════════════════");
+
+                // Ensure Availabilities table exists with Access structure
                 try
                 {
                     var testCount = await _db.Availabilities.CountAsync();
+                    Console.WriteLine($"✓ Availabilities table exists with {testCount} records");
                 }
                 catch (Exception tableEx)
                 {
                     if (tableEx.Message.Contains("cannot find") || tableEx.Message.Contains("does not exist"))
                     {
+                        Console.WriteLine("⚠ Availabilities table doesn't exist, creating it...");
                         try
                         {
                             await _db.Database.ExecuteSqlRawAsync(@"
                                 CREATE TABLE Availabilities (
-                                    AvailabilityId AUTOINCREMENT PRIMARY KEY,
+                                    AvailabilityID AUTOINCREMENT PRIMARY KEY,
                                     EmployeeId INTEGER NOT NULL,
-                                    DayOfWeek INTEGER NOT NULL,
-                                    StartTime DOUBLE NOT NULL,
-                                    EndTime DOUBLE NOT NULL
+                                    ShiftId INTEGER NOT NULL,
+                                    IsAvailable YESNO NOT NULL
                                 )
                             ");
-                            Console.WriteLine("✓ Created Availabilities table");
+                            Console.WriteLine("✓ Created Availabilities table with Access structure");
                         }
                         catch (Exception createEx)
                         {
+                            Console.WriteLine($"❌ Failed to create table: {createEx.Message}");
                             return StatusCode(500, new 
                             { 
                                 error = "Database setup error", 
@@ -180,83 +191,88 @@ namespace Backend.Controllers
                             });
                         }
                     }
+                    else
+                    {
+                        Console.WriteLine($"⚠ Table check error: {tableEx.Message}");
+                    }
                 }
 
-                // Get the shift to extract day and time
+                // Verify shift exists
                 var shift = await _db.Shifts.FindAsync(dto.ShiftId);
                 if (shift == null)
                 {
+                    Console.WriteLine($"❌ Shift {dto.ShiftId} not found");
                     return NotFound(new { error = "Shift not found" });
                 }
+                Console.WriteLine($"✓ Shift {dto.ShiftId} found");
 
-                // Find employee by user email (since dto.EmployeeId is actually userId)
-                var user = await _db.Users.FindAsync(dto.EmployeeId);
-                if (user == null)
-                {
-                    return NotFound(new { error = "User not found" });
-                }
-
-                // Find employee by matching name and store
-                var nameParts = user.FullName.Trim().Split(' ', 2);
-                var firstName = nameParts[0];
-                var lastName = nameParts.Length > 1 ? nameParts[1] : "";
-
-                var employee = await _db.Employees
-                    .FirstOrDefaultAsync(e => 
-                        e.FirstName == firstName && 
-                        (string.IsNullOrEmpty(lastName) || e.LastName == lastName) &&
-                        e.StoreId == user.StoreId);
-
+                // dto.EmployeeId is actually the EmployeeId from the logged-in employee
+                // (When employees login, their EmployeeId is returned as userId)
+                var employee = await _db.Employees.FindAsync(dto.EmployeeId);
                 if (employee == null)
                 {
-                    return NotFound(new { error = "Employee record not found for this user. Please contact administrator." });
+                    Console.WriteLine($"❌ Employee {dto.EmployeeId} not found");
+                    return NotFound(new { error = "Employee not found" });
                 }
+                Console.WriteLine($"✓ Employee {dto.EmployeeId} ({employee.FirstName}) found");
 
-                var shiftDay = shift.StartTime.DayOfWeek;
-                var shiftStartTime = shift.StartTime.TimeOfDay;
-                var shiftEndTime = shift.EndTime.TimeOfDay;
-
-                // Check if availability already exists for this shift
+                // Check if availability already exists for this employee + shift combination
                 var existingAvailability = await _db.Availabilities
                     .FirstOrDefaultAsync(a => 
                         a.EmployeeId == employee.EmployeeId &&
-                        a.DayOfWeek == shiftDay &&
-                        a.StartTime == shiftStartTime &&
-                        a.EndTime == shiftEndTime);
+                        a.ShiftId == dto.ShiftId);
 
                 if (existingAvailability != null)
                 {
-                    // Delete existing availability (toggle off)
-                    _db.Availabilities.Remove(existingAvailability);
+                    // Toggle IsAvailable (flip the boolean)
+                    var oldValue = existingAvailability.IsAvailable;
+                    existingAvailability.IsAvailable = !existingAvailability.IsAvailable;
                     await _db.SaveChangesAsync();
-                    return Ok(new { available = false, message = "Availability removed" });
+                    Console.WriteLine($"✓ Toggled availability from {oldValue} to {existingAvailability.IsAvailable}");
+                    Console.WriteLine($"  AvailabilityId: {existingAvailability.AvailabilityId}");
+                    return Ok(new { 
+                        available = existingAvailability.IsAvailable, 
+                        message = existingAvailability.IsAvailable ? "Availability set to available" : "Availability set to not available",
+                        availabilityId = existingAvailability.AvailabilityId 
+                    });
                 }
                 else
                 {
-                    // Create new availability (toggle on)
+                    // Create new availability record (default to available when first created)
                     var availability = new Availability
                     {
                         EmployeeId = employee.EmployeeId,
-                        DayOfWeek = shiftDay,
-                        StartTime = shiftStartTime,
-                        EndTime = shiftEndTime
+                        ShiftId = dto.ShiftId,
+                        IsAvailable = true
                     };
 
                     _db.Availabilities.Add(availability);
                     await _db.SaveChangesAsync();
-                    return Ok(new { available = true, message = "Availability added", availabilityId = availability.AvailabilityId });
+                    Console.WriteLine($"✓ Created new availability record");
+                    Console.WriteLine($"  AvailabilityId: {availability.AvailabilityId}, IsAvailable: {availability.IsAvailable}");
+                    return Ok(new { 
+                        available = true, 
+                        message = "Availability added", 
+                        availabilityId = availability.AvailabilityId 
+                    });
                 }
             }
             catch (Exception ex)
             {
+                Console.WriteLine("═══════════════════════════════════════════════════════");
+                Console.WriteLine($"❌ ERROR TOGGLING AVAILABILITY");
+                Console.WriteLine($"Error: {ex.Message}");
+                Console.WriteLine($"Inner Exception: {ex.InnerException?.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                Console.WriteLine("═══════════════════════════════════════════════════════");
                 return StatusCode(500, new { error = "Failed to toggle availability", message = ex.Message });
             }
         }
 
-        // GET: api/Availabilities/check/{userId}/{shiftId}
-        // Check if employee (by userId) is available for a specific shift
-        [HttpGet("check/{userId}/{shiftId}")]
-        public async Task<ActionResult<object>> CheckShiftAvailability(int userId, int shiftId)
+        // GET: api/Availabilities/for-shift/{shiftId}
+        // Get all employees available for a specific shift
+        [HttpGet("for-shift/{shiftId}")]
+        public async Task<ActionResult<IEnumerable<object>>> GetEmployeesForShift(int shiftId)
         {
             try
             {
@@ -266,43 +282,104 @@ namespace Backend.Controllers
                     return NotFound(new { error = "Shift not found" });
                 }
 
-                // Find user and corresponding employee
-                var user = await _db.Users.FindAsync(userId);
-                if (user == null)
-                {
-                    return NotFound(new { error = "User not found" });
-                }
+                // Get all availabilities for this shift where IsAvailable is true
+                var availabilities = await _db.Availabilities
+                    .Include(a => a.Employee)
+                    .Where(a => a.ShiftId == shiftId && a.IsAvailable)
+                    .Select(a => new
+                    {
+                        a.EmployeeId,
+                        EmployeeName = a.Employee != null ? a.Employee.FirstName : null,
+                        a.IsAvailable
+                    })
+                    .ToListAsync();
 
-                var nameParts = user.FullName.Trim().Split(' ', 2);
-                var firstName = nameParts[0];
-                var lastName = nameParts.Length > 1 ? nameParts[1] : "";
-
-                var employee = await _db.Employees
-                    .FirstOrDefaultAsync(e => 
-                        e.FirstName == firstName && 
-                        (string.IsNullOrEmpty(lastName) || e.LastName == lastName) &&
-                        e.StoreId == user.StoreId);
-
-                if (employee == null)
-                {
-                    return Ok(new { available = false });
-                }
-
-                var shiftDay = shift.StartTime.DayOfWeek;
-                var shiftStartTime = shift.StartTime.TimeOfDay;
-                var shiftEndTime = shift.EndTime.TimeOfDay;
-
-                var availability = await _db.Availabilities
-                    .FirstOrDefaultAsync(a => 
-                        a.EmployeeId == employee.EmployeeId &&
-                        a.DayOfWeek == shiftDay &&
-                        a.StartTime == shiftStartTime &&
-                        a.EndTime == shiftEndTime);
-
-                return Ok(new { available = availability != null });
+                return Ok(availabilities);
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error getting employees for shift: {ex.Message}");
+                return StatusCode(500, new { error = "Failed to get employees for shift", message = ex.Message });
+            }
+        }
+
+        // GET: api/Availabilities/for-employee/{employeeId}
+        // Get all shifts where an employee is available
+        [HttpGet("for-employee/{employeeId}")]
+        public async Task<ActionResult<IEnumerable<object>>> GetShiftsForEmployee(int employeeId)
+        {
+            try
+            {
+                var employee = await _db.Employees.FindAsync(employeeId);
+                if (employee == null)
+                {
+                    return NotFound(new { error = "Employee not found" });
+                }
+
+                // Get all availabilities for this employee where IsAvailable is true
+                var availabilities = await _db.Availabilities
+                    .Include(a => a.Shift)
+                    .Where(a => a.EmployeeId == employeeId && a.IsAvailable)
+                    .Select(a => new
+                    {
+                        a.ShiftId,
+                        ShiftInfo = a.Shift != null ? new
+                        {
+                            StartTime = a.Shift.StartTime,
+                            EndTime = a.Shift.EndTime,
+                            StoreId = a.Shift.StoreId
+                        } : null,
+                        a.IsAvailable
+                    })
+                    .ToListAsync();
+
+                return Ok(availabilities);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error getting shifts for employee: {ex.Message}");
+                return StatusCode(500, new { error = "Failed to get shifts for employee", message = ex.Message });
+            }
+        }
+
+        // GET: api/Availabilities/check/{employeeId}/{shiftId}
+        // Check if employee is available for a specific shift (Access structure: uses ShiftId directly)
+        [HttpGet("check/{employeeId}/{shiftId}")]
+        public async Task<ActionResult<object>> CheckShiftAvailability(int employeeId, int shiftId)
+        {
+            try
+            {
+                var shift = await _db.Shifts.FindAsync(shiftId);
+                if (shift == null)
+                {
+                    Console.WriteLine($"⚠ Check: Shift {shiftId} not found");
+                    return Ok(new { available = false });
+                }
+
+                // employeeId is the EmployeeId from the logged-in employee
+                var employee = await _db.Employees.FindAsync(employeeId);
+                if (employee == null)
+                {
+                    Console.WriteLine($"⚠ Check: Employee {employeeId} not found");
+                    return Ok(new { available = false });
+                }
+
+                // Check availability using Access structure (EmployeeId + ShiftId)
+                var availability = await _db.Availabilities
+                    .FirstOrDefaultAsync(a => 
+                        a.EmployeeId == employee.EmployeeId &&
+                        a.ShiftId == shiftId);
+
+                var isAvailable = availability != null && availability.IsAvailable;
+                Console.WriteLine($"Check availability - EmployeeId: {employeeId}, ShiftId: {shiftId}, Available: {isAvailable}");
+                
+                // Return true only if availability exists AND IsAvailable is true
+                return Ok(new { available = isAvailable });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error checking availability: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return StatusCode(500, new { error = "Failed to check availability", message = ex.Message });
             }
         }
@@ -320,9 +397,8 @@ namespace Backend.Controllers
                 }
 
                 availability.EmployeeId = dto.EmployeeId;
-                availability.DayOfWeek = dto.DayOfWeek;
-                availability.StartTime = dto.StartTime;
-                availability.EndTime = dto.EndTime;
+                availability.ShiftId = dto.ShiftId;
+                availability.IsAvailable = dto.IsAvailable;
 
                 await _db.SaveChangesAsync();
 
@@ -361,17 +437,15 @@ namespace Backend.Controllers
     public class CreateAvailabilityDto
     {
         public int EmployeeId { get; set; }
-        public DayOfWeek DayOfWeek { get; set; }
-        public TimeSpan StartTime { get; set; }
-        public TimeSpan EndTime { get; set; }
+        public int ShiftId { get; set; }
+        public bool IsAvailable { get; set; }
     }
 
     public class UpdateAvailabilityDto
     {
         public int EmployeeId { get; set; }
-        public DayOfWeek DayOfWeek { get; set; }
-        public TimeSpan StartTime { get; set; }
-        public TimeSpan EndTime { get; set; }
+        public int ShiftId { get; set; }
+        public bool IsAvailable { get; set; }
     }
 
     public class ToggleShiftAvailabilityDto

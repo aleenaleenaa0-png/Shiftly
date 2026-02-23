@@ -107,11 +107,13 @@ const EmployeeAvailability: React.FC<EmployeeAvailabilityProps> = ({ user }) => 
 
   useEffect(() => {
     fetchShifts();
-  }, [currentWeekStart, user.storeId]);
+  }, [currentWeekStart, user.storeId, user.userId]);
 
   // Toggle availability for a shift
   const toggleAvailability = async (shiftId: number) => {
     try {
+      console.log(`Toggling availability for shift ${shiftId}, employee ${user.userId}`);
+      
       const response = await fetch('/api/availabilities/toggle', {
         method: 'POST',
         headers: {
@@ -130,13 +132,34 @@ const EmployeeAvailability: React.FC<EmployeeAvailabilityProps> = ({ user }) => 
       }
 
       const data = await response.json();
+      console.log('Toggle response:', data);
       
-      // Update availability map
+      // Update availability map immediately
       setAvailabilityMap(prev => {
         const newMap = new Map(prev);
         newMap.set(shiftId, data.available);
         return newMap;
       });
+
+      // Refresh availability status to ensure it's up to date from database
+      setTimeout(async () => {
+        try {
+          const checkResponse = await fetch(`/api/availabilities/check/${user.userId}/${shiftId}`, {
+            credentials: 'include'
+          });
+          if (checkResponse.ok) {
+            const checkData = await checkResponse.json();
+            console.log(`Refreshed availability for shift ${shiftId}:`, checkData.available);
+            setAvailabilityMap(prev => {
+              const newMap = new Map(prev);
+              newMap.set(shiftId, checkData.available || false);
+              return newMap;
+            });
+          }
+        } catch (checkErr) {
+          console.warn('Failed to refresh availability status:', checkErr);
+        }
+      }, 100); // Small delay to ensure database write is complete
     } catch (err: any) {
       alert(`Error: ${err.message}`);
       console.error('Error toggling availability:', err);

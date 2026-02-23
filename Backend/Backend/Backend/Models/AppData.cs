@@ -83,6 +83,30 @@ namespace Backend.Models
                 .WithOne(sh => sh.Employee!)
                 .HasForeignKey(sh => sh.EmployeeId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            // Configure Availability entity relationships
+            modelBuilder.Entity<Availability>(entity =>
+            {
+                entity.HasKey(a => a.AvailabilityId);
+                entity.Property(a => a.AvailabilityId)
+                    .ValueGeneratedOnAdd();
+                
+                // Relationship with Employee
+                entity.HasOne(a => a.Employee)
+                    .WithMany(e => e.Availabilities)
+                    .HasForeignKey(a => a.EmployeeId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                
+                // Relationship with Shift
+                entity.HasOne(a => a.Shift)
+                    .WithMany(s => s.Availabilities)
+                    .HasForeignKey(a => a.ShiftId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                
+                // Ensure unique combination of EmployeeId + ShiftId
+                entity.HasIndex(a => new { a.EmployeeId, a.ShiftId })
+                    .IsUnique();
+            });
         }
     }
 }

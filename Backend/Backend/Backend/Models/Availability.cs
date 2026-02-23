@@ -7,17 +7,16 @@ namespace Backend.Models
     {
         public int AvailabilityId { get; set; }
 
+        [Required]
         public int EmployeeId { get; set; }
         public Employee? Employee { get; set; }
 
         [Required]
-        public DayOfWeek DayOfWeek { get; set; }
+        public int ShiftId { get; set; }
+        public Shift? Shift { get; set; }
 
         [Required]
-        public TimeSpan StartTime { get; set; }
-
-        [Required]
-        public TimeSpan EndTime { get; set; }
+        public bool IsAvailable { get; set; }
     }
 }
 

@@ -5,9 +5,10 @@ import { Employee } from '../types';
 interface EmployeeSidebarProps {
   employees: Employee[];
   onDragStart: (e: React.DragEvent, employeeId: string) => void;
+  employeeAvailabilityCount?: Map<string, number>;
 }
 
-const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ employees, onDragStart }) => {
+const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ employees, onDragStart, employeeAvailabilityCount }) => {
   return (
     <div className="w-full lg:w-96 flex-shrink-0">
       <div className="bg-white/80 backdrop-blur-2xl rounded-3xl shadow-xl shadow-rose-500/10 border border-rose-200/50 p-8 sticky top-24">
@@ -51,12 +52,24 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ employees, onDragStar
                         <i className="fas fa-dollar-sign mr-1"></i>
                         <span>{emp.hourlyRate}/שעה</span>
                     </div>
-                    <div className="flex -space-x-1">
-                        {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, i) => (
-                            <div key={i} className="w-5 h-5 rounded-md flex items-center justify-center text-[8px] font-black border border-rose-200 bg-rose-50 text-slate-400">
-                                {day}
-                            </div>
-                        ))}
+                    <div className="flex items-center space-x-2">
+                        {employeeAvailabilityCount && employeeAvailabilityCount.get(emp.id) !== undefined && (
+                            <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${
+                                (employeeAvailabilityCount.get(emp.id) || 0) > 0
+                                    ? 'bg-green-100 text-green-700'
+                                    : 'bg-slate-100 text-slate-500'
+                            }`}>
+                                <i className="fas fa-calendar-check mr-1"></i>
+                                {employeeAvailabilityCount.get(emp.id) || 0}
+                            </span>
+                        )}
+                        <div className="flex -space-x-1">
+                            {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, i) => (
+                                <div key={i} className="w-5 h-5 rounded-md flex items-center justify-center text-[8px] font-black border border-rose-200 bg-rose-50 text-slate-400">
+                                    {day}
+                                </div>
+                            ))}
+                        </div>
                     </div>
                   </div>
                 </div>
