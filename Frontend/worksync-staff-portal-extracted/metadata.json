@@ -1,0 +1,8 @@
+
+{
+  "name": "WorkSync - Staff Portal",
+  "description": "A professional worker portal for setting weekly availability and viewing finalized management schedules with AI-powered shift insights.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
