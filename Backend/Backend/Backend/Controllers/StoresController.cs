@@ -510,6 +510,74 @@ namespace Backend.Controllers
                     .Select(s => new { s.StoreId, s.Name, s.Location })
                     .ToListAsync();
 
+                // After creating stores, automatically seed shifts for all stores
+                Console.WriteLine("Auto-seeding shifts for all stores...");
+                try
+                {
+                    var allStoreIds = await _db.Stores.Select(s => s.StoreId).ToListAsync();
+                    int totalShiftsCreated = 0;
+                    var today = DateTime.Today;
+                    var weekStart = today.AddDays(-(int)today.DayOfWeek + 1);
+                    if (today.DayOfWeek == DayOfWeek.Sunday)
+                    {
+                        weekStart = today.AddDays(-6);
+                    }
+                    
+                    // Create shifts for current week and next 2 weeks (3 weeks total)
+                    for (int weekOffset = 0; weekOffset < 3; weekOffset++)
+                    {
+                        var currentWeekStart = weekStart.AddDays(weekOffset * 7);
+                        var weekEnd = currentWeekStart.AddDays(7);
+                        
+                        foreach (var storeIdValue in allStoreIds)
+                        {
+                            // Check if shifts already exist
+                            var existingCount = await _db.Shifts
+                                .Where(s => s.StoreId == storeIdValue && 
+                                           s.StartTime >= currentWeekStart && 
+                                           s.StartTime < weekEnd)
+                                .CountAsync();
+                            
+                            if (existingCount >= 14) continue;
+                            
+                            var shiftsToCreate = new List<Shift>();
+                            for (int day = 0; day < 7; day++)
+                            {
+                                var currentDay = currentWeekStart.AddDays(day);
+                                
+                                // Morning: 9-15
+                                shiftsToCreate.Add(new Shift
+                                {
+                                    StoreId = storeIdValue,
+                                    StartTime = currentDay.AddHours(9),
+                                    EndTime = currentDay.AddHours(15),
+                                    RequiredProductivity = 2500
+                                });
+                                
+                                // Afternoon: 15-21
+                                shiftsToCreate.Add(new Shift
+                                {
+                                    StoreId = storeIdValue,
+                                    StartTime = currentDay.AddHours(15),
+                                    EndTime = currentDay.AddHours(21),
+                                    RequiredProductivity = 3500
+                                });
+                            }
+                            
+                            _db.Shifts.AddRange(shiftsToCreate);
+                            await _db.SaveChangesAsync();
+                            totalShiftsCreated += shiftsToCreate.Count;
+                            Console.WriteLine($"✓ Created {shiftsToCreate.Count} shifts for store {storeIdValue}, week {currentWeekStart:yyyy-MM-dd}");
+                        }
+                    }
+                    Console.WriteLine($"✓ Auto-created {totalShiftsCreated} shifts total");
+                }
+                catch (Exception shiftEx)
+                {
+                    Console.WriteLine($"⚠ Could not auto-seed shifts: {shiftEx.Message}");
+                    // Don't fail the store seeding if shift seeding fails
+                }
+
                 return Ok(new
                 {
                     success = true,

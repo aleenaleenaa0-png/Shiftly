@@ -180,7 +180,7 @@ namespace Backend.Controllers
                     try
                     {
                         // Get or create a store
-                        var firstStore = await _db.Stores.FirstOrDefaultAsync();
+                        var firstStore = await _db.Stores.OrderBy(s => s.StoreId).FirstOrDefaultAsync();
                         int storeId;
                         
                         if (firstStore == null)
@@ -240,7 +240,10 @@ namespace Backend.Controllers
                 // All other users (including Users table entries) should be treated as Workers/Employees
                 bool isManagerCredentials = email == "manager@shiftly.com" && password == "manager123";
                 
-                if (user != null && isManagerCredentials)
+                // If it's manager credentials, ONLY check Users table, don't check Employees
+                if (isManagerCredentials)
+                {
+                    if (user != null)
                 {
                     // Manager login - only for manager@shiftly.com/manager123
                     var claims = new List<Claim>
@@ -265,6 +268,7 @@ namespace Backend.Controllers
                         new ClaimsPrincipal(claimsIdentity),
                         authProperties);
 
+                        Console.WriteLine($"✓✓✓ MANAGER LOGIN SUCCESS - User ID: {user.UserId}, Email: {user.Email}");
                     return Ok(new
                     {
                         success = true,
@@ -279,6 +283,13 @@ namespace Backend.Controllers
                             userType = "Manager"
                         }
                     });
+                    }
+                    else
+                    {
+                        // Manager credentials but user not found - already tried to create above
+                        Console.WriteLine("✗✗✗ Manager credentials provided but user not found and creation failed");
+                        return Unauthorized(new { success = false, error = "Invalid email or password" });
+                    }
                 }
                 else if (user != null && !isManagerCredentials)
                 {
@@ -289,97 +300,61 @@ namespace Backend.Controllers
                     user = null;
                 }
 
-                // Check if it's an employee - use raw SQL for maximum reliability
+                // Check if it's an employee - ONLY if NOT manager credentials
                 Employee? employee = null;
-                Console.WriteLine($"═══════════════════════════════════════");
-                Console.WriteLine($"EMPLOYEE LOGIN ATTEMPT - Email: {email}");
-                Console.WriteLine($"═══════════════════════════════════════");
                 
-                try
+                // Skip employee check if it's manager credentials (already handled above)
+                if (!isManagerCredentials)
                 {
-                    // Access Employees table structure: EmployeeId, FirstName, HourlyWage, ProductivityScore, StoreId, Email
-                    // NO LastName, NO Password columns - employees login with email only
-                    Console.WriteLine("Querying employees - Access structure: EmployeeId, FirstName, HourlyWage, ProductivityScore, StoreId, Email");
-                    Console.WriteLine("NOTE: Employees login with Email only (no password check)");
-                    
-                    // Get all employees and filter by email
-                    List<Employee> allEmployees;
                     try
                     {
-                        allEmployees = await _db.Employees.ToListAsync();
-                        Console.WriteLine($"Found {allEmployees.Count} total employees");
-                    }
-                    catch (Exception allEx)
-                    {
-                        Console.WriteLine($"Employee query failed: {allEx.Message}");
-                        allEmployees = new List<Employee>();
+                        // Access Employees table structure: EmployeeId, FirstName, HourlyWage, ProductivityScore, StoreId, Email
+                        // NO LastName, NO Password columns - employees login with email only
+                        
+                        // Get all employees and filter by email
+                        List<Employee> allEmployees;
+                        try
+                        {
+                            allEmployees = await _db.Employees.ToListAsync();
+                        }
+                        catch (Exception allEx)
+                        {
+                            allEmployees = new List<Employee>();
                     }
                     
-                    // Filter by email only (no password check - employees don't have password column)
-                    Console.WriteLine($"Searching for email: '{email}' (case-insensitive, no password check)");
+                        // Filter by email only (no password check - employees don't have password column)
                     employee = allEmployees
                         .Where(e => 
-                            e.Email != null &&
-                            e.Email.Trim().Equals(email, StringComparison.OrdinalIgnoreCase))
+                            e.Email != null && 
+                                e.Email.Trim().Equals(email, StringComparison.OrdinalIgnoreCase))
+                            .OrderBy(e => e.EmployeeId)
                         .FirstOrDefault();
                     
                     if (employee != null)
                     {
-                        Console.WriteLine($"✓✓✓ EMPLOYEE FOUND! ID: {employee.EmployeeId}, Name: {employee.FirstName}");
-                        
                         // Load store
                         try
                         {
                             var store = await _db.Stores.FindAsync(employee.StoreId);
                             employee.Store = store;
-                            Console.WriteLine($"Store loaded: {store?.Name ?? "N/A"}");
                         }
                         catch (Exception storeEx)
                         {
-                            Console.WriteLine($"⚠ Store load failed: {storeEx.Message}");
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine($"✗✗✗ NO MATCH FOUND for email: {email}");
-                        if (allEmployees.Count > 0)
-                        {
-                            var withEmail = allEmployees.Where(e => e.Email != null).ToList();
-                            Console.WriteLine($"Employees with Email in DB: {withEmail.Count}");
-                            if (withEmail.Count > 0)
-                            {
-                                var sampleEmails = withEmail.Take(5).Select(e => $"'{e.Email}'").ToList();
-                                Console.WriteLine($"Sample emails: {string.Join(", ", sampleEmails)}");
-                            }
-                        }
-                        else
-                        {
-                            Console.WriteLine("⚠ No employees found in database at all!");
+                                // Store load failed - continue anyway
                         }
                     }
                 }
                 catch (Exception empEx)
                 {
-                    Console.WriteLine($"═══════════════════════════════════════");
-                    Console.WriteLine($"CRITICAL ERROR in employee lookup:");
-                    Console.WriteLine($"Type: {empEx.GetType().Name}");
-                    Console.WriteLine($"Message: {empEx.Message}");
-                    if (empEx.InnerException != null)
-                    {
-                        Console.WriteLine($"Inner: {empEx.InnerException.GetType().Name} - {empEx.InnerException.Message}");
-                    }
-                    Console.WriteLine($"Stack: {empEx.StackTrace}");
-                    Console.WriteLine($"═══════════════════════════════════════");
+                        // Error in employee lookup - set to null and continue
                     employee = null;
                 }
-                
-                Console.WriteLine($"Employee lookup result: {(employee != null ? $"Found employee ID {employee.EmployeeId}" : "No employee found")}");
                 
                 // Safety check - if employee is null, make sure we don't try to access it
                 if (employee != null && employee.EmployeeId <= 0)
                 {
-                    Console.WriteLine("⚠ Invalid employee ID detected, treating as null");
                     employee = null;
+                    }
                 }
 
                 if (employee != null)
@@ -423,7 +398,6 @@ namespace Backend.Controllers
                     });
                 }
 
-                Console.WriteLine("Login failed - no matching user or employee found");
                 return Unauthorized(new { success = false, error = "Invalid email or password" });
             }
             catch (Exception ex)
@@ -520,6 +494,7 @@ namespace Backend.Controllers
                 {
                     // Try to query the table to see if it exists with correct schema
                     var testUser = await _db.Users
+                        .OrderBy(u => u.UserId)
                         .Select(u => new { u.UserId, u.Email, u.FullName, u.Password, u.StoreId })
                         .FirstOrDefaultAsync();
                     Console.WriteLine("✓ Users table exists with correct schema");
@@ -830,10 +805,10 @@ namespace Backend.Controllers
                         Console.WriteLine($"Inner Exception: {basicInsertEx.InnerException.Message}");
                     }
                     Console.WriteLine("═══════════════════════════════════════════════════════");
-                    
-                    return StatusCode(500, new 
-                    { 
-                        error = "Failed to create employee", 
+                            
+                            return StatusCode(500, new 
+                            { 
+                                error = "Failed to create employee", 
                         message = $"Insert failed: {basicInsertEx.Message}",
                         details = new
                         {
@@ -915,7 +890,10 @@ namespace Backend.Controllers
             try
             {
                 // Check if manager already exists
-                var existingManager = await _db.Users.FirstOrDefaultAsync(u => u.Email == "manager@shiftly.com");
+                var existingManager = await _db.Users
+                    .Where(u => u.Email == "manager@shiftly.com")
+                    .OrderBy(u => u.UserId)
+                    .FirstOrDefaultAsync();
                 if (existingManager != null)
                 {
                     return Ok(new 
@@ -932,7 +910,7 @@ namespace Backend.Controllers
                 }
 
                 // Get or create a store
-                var firstStore = await _db.Stores.FirstOrDefaultAsync();
+                var firstStore = await _db.Stores.OrderBy(s => s.StoreId).FirstOrDefaultAsync();
                 int storeId;
                 
                 if (firstStore == null)

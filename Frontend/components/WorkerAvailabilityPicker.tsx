@@ -21,27 +21,41 @@ const WorkerAvailabilityPicker: React.FC<WorkerAvailabilityPickerProps> = ({ use
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Load existing availability from backend
+  // Map slot number (1-14) to day + morning/evening. Slot 1=Mon AM, 2=Mon PM, ... 14=Sun PM.
+  const slotToDayAndPart = (slotNum: number): { day: string; part: 'morning' | 'evening' } => {
+    const dayIndex = Math.floor((slotNum - 1) / 2);
+    const part: 'morning' | 'evening' = (slotNum - 1) % 2 === 0 ? 'morning' : 'evening';
+    return { day: DAYS_OF_WEEK[dayIndex], part };
+  };
+  const dayAndPartToSlot = (day: string, part: 'morning' | 'evening'): number => {
+    const dayIndex = DAYS_OF_WEEK.indexOf(day);
+    return dayIndex * 2 + (part === 'morning' ? 1 : 2);
+  };
+
+  // Load existing availability from backend (availabilityMap by slot 1-14)
   useEffect(() => {
     const loadAvailability = async () => {
       try {
         setLoading(true);
         const response = await fetch(`/api/availabilities/employee/${userId}`, {
-          credentials: 'include'
+          credentials: 'include',
+          cache: 'no-cache'
         });
-        
         if (response.ok) {
           const data = await response.json();
-          // Map backend availability data to frontend format
-          // This is a simplified mapping - adjust based on your backend structure
-          if (data && data.length > 0) {
-            const newSelections: Record<string, Record<'morning' | 'evening', SlotStatus>> = {};
-            DAYS_OF_WEEK.forEach(day => {
-              newSelections[day] = { morning: 'Neutral', evening: 'Neutral' };
-            });
-            // Process availability data here if needed
-            setSelections(newSelections);
+          const raw = data.availabilityMap || {};
+          const newSelections: Record<string, Record<'morning' | 'evening', SlotStatus>> = {};
+          DAYS_OF_WEEK.forEach(day => {
+            newSelections[day] = { morning: 'Neutral', evening: 'Neutral' };
+          });
+          for (let slot = 1; slot <= 14; slot++) {
+            const v = raw[String(slot)] ?? raw[slot];
+            if (v === true) {
+              const { day, part } = slotToDayAndPart(slot);
+              if (newSelections[day]) newSelections[day][part] = 'Available';
+            }
           }
+          setSelections(newSelections);
         }
       } catch (err) {
         console.error('Error loading availability:', err);
@@ -49,10 +63,7 @@ const WorkerAvailabilityPicker: React.FC<WorkerAvailabilityPickerProps> = ({ use
         setLoading(false);
       }
     };
-
-    if (userId) {
-      loadAvailability();
-    }
+    if (userId) loadAvailability();
   }, [userId]);
 
   const toggleSlot = (day: string, slot: 'morning' | 'evening') => {
@@ -75,54 +86,34 @@ const WorkerAvailabilityPicker: React.FC<WorkerAvailabilityPickerProps> = ({ use
     }
   };
 
+  // Save each slot (1-14) via set-availability so one row per slot is created in the DB
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
-      // Convert selections to backend format and submit
-      const availabilityData = DAYS_OF_WEEK.flatMap(day => {
-        const dayData = selections[day];
-        const availabilities = [];
-        
-        if (dayData.morning !== 'Neutral') {
-          availabilities.push({
-            dayOfWeek: day,
-            timeSlot: 'Morning',
-            status: dayData.morning === 'Available' ? 'AVAILABLE' : 'UNAVAILABLE'
-          });
+      for (let slotNumber = 1; slotNumber <= 14; slotNumber++) {
+        const { day, part } = slotToDayAndPart(slotNumber);
+        const status = selections[day]?.[part] ?? 'Neutral';
+        const isAvailable = status === 'Available';
+        const response = await fetch('/api/availabilities/set-availability', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            employeeId: userId,
+            slotNumber,
+            isAvailable
+          })
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.message || err.error || `Slot ${slotNumber}: ${response.status}`);
         }
-        
-        if (dayData.evening !== 'Neutral') {
-          availabilities.push({
-            dayOfWeek: day,
-            timeSlot: 'Evening',
-            status: dayData.evening === 'Available' ? 'AVAILABLE' : 'UNAVAILABLE'
-          });
-        }
-        
-        return availabilities;
-      });
-
-      const response = await fetch(`/api/availabilities`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          employeeId: userId,
-          availabilities: availabilityData
-        })
-      });
-
-      if (response.ok) {
-        setSuccess(true);
-        setTimeout(() => setSuccess(false), 3000);
-      } else {
-        throw new Error('Failed to save availability');
       }
-    } catch (err) {
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: any) {
       console.error('Error saving availability:', err);
-      alert('Failed to save availability. Please try again.');
+      alert(err.message || 'Failed to save availability. Please try again.');
     } finally {
       setSubmitting(false);
     }

@@ -1,10 +1,12 @@
 using System;
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Backend.Models
 {
     public class Availability
     {
+        [Column("AvailabilityID")]
         public int AvailabilityId { get; set; }
 
         [Required]

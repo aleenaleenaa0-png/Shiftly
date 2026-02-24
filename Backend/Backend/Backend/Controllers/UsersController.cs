@@ -26,6 +26,7 @@ namespace Backend.Controllers
                 try
                 {
                     var testUser = await _db.Users
+                        .OrderBy(u => u.UserId)
                         .Select(u => new { u.UserId, u.Email, u.FullName, u.StoreId })
                         .FirstOrDefaultAsync();
                     Console.WriteLine("✓ Users table exists with correct schema");

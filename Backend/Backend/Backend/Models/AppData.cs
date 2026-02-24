@@ -66,6 +66,38 @@ namespace Backend.Models
                 .HasForeignKey(u => u.StoreId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // Configure Shift entity with correct Access column names
+            // Access table: Shift_ID, Shift_StoreID, Shift_StartTime, Shift_EndTime, Shift_EmployeeID, Shift_ReqThroughput, Shift_SlotNumber
+            modelBuilder.Entity<Shift>(entity =>
+            {
+                entity.HasKey(e => e.ShiftId);
+                entity.Property(e => e.ShiftId)
+                    .HasColumnName("Shift_ID")
+                    .ValueGeneratedOnAdd();
+                entity.Property(e => e.StoreId)
+                    .HasColumnName("Shift_StoreID");
+                entity.Property(e => e.StartTime)
+                    .HasColumnName("Shift_StartTime");
+                entity.Property(e => e.EndTime)
+                    .HasColumnName("Shift_EndTime");
+                entity.Property(e => e.RequiredProductivity)
+                    .HasColumnName("Shift_ReqThroughput")
+                    .HasColumnType("decimal(18,2)");
+                entity.Property(e => e.EmployeeId)
+                    .HasColumnName("Shift_EmployeeID");
+                entity.Property(e => e.SlotNumber)
+                    .HasColumnName("Shift_SlotNumber");
+                // MatchScore is [NotMapped] - does not exist in Access database
+                entity.Ignore(e => e.MatchScore);
+            });
+            
+            // Configure Employee entity with decimal column types
+            modelBuilder.Entity<Employee>(entity =>
+            {
+                entity.Property(e => e.HourlyWage)
+                    .HasColumnType("decimal(18,2)");
+            });
+
             modelBuilder.Entity<Store>()
                 .HasMany(s => s.Shifts)
                 .WithOne(sh => sh.Store!)
@@ -85,11 +117,21 @@ namespace Backend.Models
                 .OnDelete(DeleteBehavior.SetNull);
 
             // Configure Availability entity relationships
+            // Access table columns: AvailabilityID, EmployeeId, ShiftId, IsAvailable
             modelBuilder.Entity<Availability>(entity =>
             {
                 entity.HasKey(a => a.AvailabilityId);
                 entity.Property(a => a.AvailabilityId)
+                    .HasColumnName("AvailabilityID")
                     .ValueGeneratedOnAdd();
+                
+                // Column names match Access schema exactly
+                entity.Property(a => a.EmployeeId)
+                    .HasColumnName("EmployeeId");
+                entity.Property(a => a.ShiftId)
+                    .HasColumnName("ShiftId");
+                entity.Property(a => a.IsAvailable)
+                    .HasColumnName("IsAvailable");
                 
                 // Relationship with Employee
                 entity.HasOne(a => a.Employee)
@@ -97,7 +139,7 @@ namespace Backend.Models
                     .HasForeignKey(a => a.EmployeeId)
                     .OnDelete(DeleteBehavior.Cascade);
                 
-                // Relationship with Shift
+                // Relationship with Shift - ShiftId references Shift.ShiftId which maps to Shift_ID
                 entity.HasOne(a => a.Shift)
                     .WithMany(s => s.Availabilities)
                     .HasForeignKey(a => a.ShiftId)

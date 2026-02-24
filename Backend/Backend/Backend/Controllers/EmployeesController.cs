@@ -28,6 +28,7 @@ namespace Backend.Controllers
                 {
                     // Try to query with all expected columns
                     var testEmployee = await _db.Employees
+                        .OrderBy(e => e.EmployeeId)
                         .Select(e => new { e.EmployeeId, e.FirstName, e.LastName, e.HourlyWage, e.ProductivityScore, e.StoreId })
                         .FirstOrDefaultAsync();
                     Console.WriteLine("✓ Employees table exists with correct schema");

@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Shift, Employee, ScheduleKPIs } from './types';
-import { EMPLOYEES, INITIAL_SHIFTS, DAYS } from './constants';
+import { DAYS } from './constants';
 import KPIBanner from './components/KPIBanner';
 import EmployeeSidebar from './components/EmployeeSidebar';
 import EmployeeManagement from './components/EmployeeManagement';
@@ -56,8 +56,10 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true); // Start with true to show loading, then login
   const [authPage, setAuthPage] = useState<'login' | 'signup'>('login');
-  const [shifts, setShifts] = useState<Shift[]>(INITIAL_SHIFTS);
-  const [employees] = useState<Employee[]>(EMPLOYEES);
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [loadingShifts, setLoadingShifts] = useState(false);
   const [kpis, setKpis] = useState<ScheduleKPIs>({
     totalCost: 0,
     totalTargetSales: 0,
@@ -72,6 +74,9 @@ const App: React.FC = () => {
   const [backendError, setBackendError] = useState<string | null>(null);
   const [shiftAvailabilityMap, setShiftAvailabilityMap] = useState<Map<string, number[]>>(new Map()); // shiftId -> employeeIds
   const [employeeAvailabilityCount, setEmployeeAvailabilityCount] = useState<Map<string, number>>(new Map()); // employeeId -> count
+  const availabilityIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastShiftIdsRef = useRef<string>('');
+  const lastEmployeeIdsRef = useRef<string>('');
 
   useEffect(() => {
     let totalCost = 0;
@@ -152,53 +157,203 @@ const App: React.FC = () => {
     checkBackend();
   }, []);
 
-  // Fetch availability for all shifts and employees
+  // Fetch employees from database - dynamic, no hardcoding
   useEffect(() => {
-    if (!user || (user.role !== 'Manager' && user.userType !== 'Manager')) return;
+    if (!user || (user.role !== 'Manager' && user.userType !== 'Manager')) {
+      setEmployees([]); // Clear employees if not manager
+      return;
+    }
+
+    const fetchEmployees = async () => {
+      try {
+        setLoadingEmployees(true);
+        console.log('═══════════════════════════════════════════════════════');
+        console.log('🔄 FETCHING ALL EMPLOYEES FROM ACCESS DATABASE...');
+        console.log(`  Manager Store ID: ${user.storeId}`);
+        console.log('═══════════════════════════════════════════════════════');
+        
+        const response = await fetch('/api/employees', {
+          credentials: 'include',
+          cache: 'no-cache' // Always get fresh data
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log(`✓ Received ${data.length} employees from backend`);
+          
+          // Map backend employees to frontend format
+          const mappedEmployees: Employee[] = data.map((emp: any) => {
+            const employeeId = (emp.EmployeeId || emp.employeeId).toString();
+            const firstName = emp.FirstName || emp.firstName || 'Unknown';
+            const hourlyWage = emp.HourlyWage || emp.hourlyWage || 25;
+            const productivityScore = emp.ProductivityScore || emp.productivityScore || 70;
+            
+            console.log(`  - Employee ID: ${employeeId}, Name: ${firstName}, Wage: $${hourlyWage}, Productivity: ${productivityScore}%`);
+            
+            return {
+              id: employeeId,
+              name: firstName, // Use FirstName from Access database
+              role: 'Associate', // Default role
+              hourlyRate: hourlyWage,
+              productivityScore: productivityScore,
+              avatar: `https://picsum.photos/seed/${employeeId}/100`,
+              availability: DAYS // Default to all days
+            };
+          });
+
+          setEmployees(mappedEmployees);
+          console.log(`✓ Successfully loaded ${mappedEmployees.length} employees from Access database`);
+          console.log('═══════════════════════════════════════════════════════');
+        } else {
+          const errorText = await response.text();
+          console.error(`❌ Failed to fetch employees: ${response.status} - ${errorText}`);
+          setEmployees([]);
+        }
+      } catch (err: any) {
+        console.error('❌ Error fetching employees:', err);
+        setEmployees([]);
+      } finally {
+        setLoadingEmployees(false);
+      }
+    };
+
+    fetchEmployees();
+  }, [user]);
+
+  // Fetch shifts from database - dynamic, no hardcoding
+  useEffect(() => {
+    if (!user || (user.role !== 'Manager' && user.userType !== 'Manager')) {
+      setShifts([]); // Clear shifts if not manager
+      return;
+    }
+
+    const fetchShifts = async () => {
+      try {
+        setLoadingShifts(true);
+        console.log('🔄 Fetching shifts from Access database...');
+        
+        // Get current week start (Monday)
+        const today = new Date();
+        const day = today.getDay();
+        const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(today.setDate(diff));
+        monday.setHours(0, 0, 0, 0);
+        
+        const response = await fetch(`/api/shifts?storeId=${user.storeId}&weekStart=${monday.toISOString()}`, {
+          credentials: 'include',
+          cache: 'no-cache'
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log(`✓ Received ${data.length} shifts from backend`);
+          
+          // Map backend shifts to frontend format
+          const mappedShifts: Shift[] = data.map((shift: any) => {
+            const startTime = new Date(shift.StartTime || shift.startTime);
+            const endTime = new Date(shift.EndTime || shift.endTime);
+            const dayName = startTime.toLocaleDateString('en-US', { weekday: 'long' });
+            const startHour = startTime.getHours();
+            const isMorning = startHour >= 9 && startHour < 15;
+            
+            return {
+              id: (shift.ShiftId || shift.shiftId).toString(),
+              day: dayName,
+              startTime: startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false }),
+              endTime: endTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false }),
+              type: isMorning ? 'Morning' : 'Afternoon',
+              targetSales: shift.RequiredProductivity || shift.requiredProductivity || 2500,
+              assignedEmployeeId: shift.EmployeeId || shift.employeeId ? (shift.EmployeeId || shift.employeeId).toString() : null
+            };
+          });
+
+          setShifts(mappedShifts);
+          console.log(`✓ Successfully loaded ${mappedShifts.length} shifts from Access database`);
+        } else {
+          console.error(`❌ Failed to fetch shifts: ${response.status}`);
+          setShifts([]);
+        }
+      } catch (err: any) {
+        console.error('❌ Error fetching shifts:', err);
+        setShifts([]);
+      } finally {
+        setLoadingShifts(false);
+      }
+    };
+
+    fetchShifts();
+  }, [user]);
+
+  // Fetch availability for all shifts and employees - fully dynamic from database
+  useEffect(() => {
+    if (!user || (user.role !== 'Manager' && user.userType !== 'Manager')) {
+      // Clear interval if not manager
+      if (availabilityIntervalRef.current) {
+        clearInterval(availabilityIntervalRef.current);
+        availabilityIntervalRef.current = null;
+      }
+      return;
+    }
+    if (shifts.length === 0 || employees.length === 0) return; // Wait for shifts and employees to load
+
+    // Use shift and employee IDs as stable references instead of the full arrays
+    const shiftIds = shifts.map(s => s.id).sort().join(',');
+    const employeeIds = employees.map(e => e.id).sort().join(',');
+
+    // Only recreate interval if IDs have actually changed (prevent re-creating on every render)
+    const idsChanged = shiftIds !== lastShiftIdsRef.current || employeeIds !== lastEmployeeIdsRef.current;
+    
+    if (idsChanged) {
+      // Clear existing interval if IDs changed
+      if (availabilityIntervalRef.current) {
+        clearInterval(availabilityIntervalRef.current);
+        availabilityIntervalRef.current = null;
+      }
+      
+      // Update refs
+      lastShiftIdsRef.current = shiftIds;
+      lastEmployeeIdsRef.current = employeeIds;
+    } else if (availabilityIntervalRef.current) {
+      // IDs haven't changed and interval already exists, don't recreate
+      return;
+    }
 
     const fetchAvailability = async () => {
+      // Only fetch if we have shifts and employees loaded
+      if (shifts.length === 0 || employees.length === 0) {
+        return;
+      }
+      
       try {
-        // First, fetch all shifts from backend to get real shift IDs
-        const shiftsResponse = await fetch(`/api/shifts?storeId=${user.storeId}`, {
-          credentials: 'include'
-        });
-        let backendShifts: any[] = [];
-        if (shiftsResponse.ok) {
-          backendShifts = await shiftsResponse.json();
-        }
-
-        // Create a mapping from frontend shift (day + type) to backend shift ID
-        const shiftIdMap = new Map<string, number>();
-        shifts.forEach(frontendShift => {
-          // Find matching backend shift by day and time
-          const matchingBackendShift = backendShifts.find((bs: any) => {
-            const shiftDate = new Date(bs.StartTime || bs.startTime);
-            const shiftDay = shiftDate.toLocaleDateString('en-US', { weekday: 'long' });
-            const shiftStart = new Date(bs.StartTime || bs.startTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false });
-            const isMorning = frontendShift.type === 'Morning' && (shiftStart.startsWith('9') || shiftStart.startsWith('09'));
-            const isAfternoon = frontendShift.type === 'Afternoon' && (shiftStart.startsWith('15') || shiftStart.startsWith('3'));
-            return shiftDay === frontendShift.day && (isMorning || isAfternoon);
-          });
-          if (matchingBackendShift) {
-            shiftIdMap.set(frontendShift.id, matchingBackendShift.ShiftId || matchingBackendShift.shiftId);
-          }
-        });
-
-        // Fetch availability for each shift using backend shift IDs
-        const shiftAvailabilityPromises = Array.from(shiftIdMap.entries()).map(async ([frontendShiftId, backendShiftId]) => {
+        // Fetch availability for each shift using backend shift IDs (shifts already have real IDs from database)
+        // This gets employees who have marked themselves as available for each shift
+        const shiftAvailabilityPromises = shifts.map(async (frontendShift) => {
           try {
+            const backendShiftId = parseInt(frontendShift.id); // Frontend shift ID is the backend Shift_ID
+            if (isNaN(backendShiftId)) {
+              console.warn(`⚠ Invalid shift ID: ${frontendShift.id}`);
+              return { shiftId: frontendShift.id, employeeIds: [] };
+            }
+            
             const response = await fetch(`/api/availabilities/for-shift/${backendShiftId}`, {
-              credentials: 'include'
+              credentials: 'include',
+              cache: 'no-cache' // Always get fresh data from database
             });
             if (response.ok) {
               const data = await response.json();
-              const employeeIds = data.map((a: any) => a.EmployeeId || a.employeeId).filter((id: any) => id);
-              return { shiftId: frontendShiftId, employeeIds };
+              // Get employee IDs from availability records where IsAvailable = true
+              // Backend endpoint only returns records where IsAvailable is true
+              const employeeIds = data
+                .filter((a: any) => a.IsAvailable === true) // Double-check IsAvailable is true
+                .map((a: any) => a.EmployeeId || a.employeeId)
+                .filter((id: any) => id != null && !isNaN(id));
+              
+              return { shiftId: frontendShift.id, employeeIds };
             }
           } catch (err) {
-            console.warn(`Failed to fetch availability for shift ${backendShiftId}:`, err);
+            // Silently fail - will retry on next interval
           }
-          return { shiftId: frontendShiftId, employeeIds: [] };
+          return { shiftId: frontendShift.id, employeeIds: [] };
         });
 
         const shiftResults = await Promise.all(shiftAvailabilityPromises);
@@ -208,41 +363,22 @@ const App: React.FC = () => {
         });
         setShiftAvailabilityMap(newShiftMap);
 
-        // Fetch availability count for each employee
-        // First, get all employees from backend
-        const employeesResponse = await fetch('/api/employees', {
-          credentials: 'include'
-        });
-        let backendEmployees: any[] = [];
-        if (employeesResponse.ok) {
-          backendEmployees = await employeesResponse.json();
-        }
-
-        // Map frontend employee IDs to backend employee IDs
-        const employeeIdMap = new Map<string, number>();
-        employees.forEach(frontendEmp => {
-          const matchingBackendEmp = backendEmployees.find((be: any) => 
-            be.FirstName === frontendEmp.name.split(' ')[0] || 
-            be.EmployeeId?.toString() === frontendEmp.id
-          );
-          if (matchingBackendEmp) {
-            employeeIdMap.set(frontendEmp.id, matchingBackendEmp.EmployeeId || matchingBackendEmp.employeeId);
-          }
-        });
-
-        const employeeAvailabilityPromises = Array.from(employeeIdMap.entries()).map(async ([frontendEmpId, backendEmpId]) => {
+        // Fetch availability count for each employee using their real backend IDs
+        const employeeAvailabilityPromises = employees.map(async (frontendEmp) => {
           try {
+            const backendEmpId = parseInt(frontendEmp.id); // Frontend employee ID is the backend EmployeeId
             const response = await fetch(`/api/availabilities/for-employee/${backendEmpId}`, {
-              credentials: 'include'
+              credentials: 'include',
+              cache: 'no-cache'
             });
             if (response.ok) {
               const data = await response.json();
-              return { employeeId: frontendEmpId, count: data.length || 0 };
+              return { employeeId: frontendEmp.id, count: data.length || 0 };
             }
           } catch (err) {
-            console.warn(`Failed to fetch availability for employee ${backendEmpId}:`, err);
+            // Silently fail - will retry on next interval
           }
-          return { employeeId: frontendEmpId, count: 0 };
+          return { employeeId: frontendEmp.id, count: 0 };
         });
 
         const employeeResults = await Promise.all(employeeAvailabilityPromises);
@@ -252,15 +388,24 @@ const App: React.FC = () => {
         });
         setEmployeeAvailabilityCount(newEmployeeMap);
       } catch (err) {
-        console.error('Error fetching availability:', err);
+        // Silently fail - will retry on next interval
       }
     };
 
+    // Initial fetch
     fetchAvailability();
-    // Refresh every 5 seconds to catch updates
-    const interval = setInterval(fetchAvailability, 5000);
-    return () => clearInterval(interval);
-  }, [shifts, employees, user]);
+    // Refresh every 15 seconds to catch employee availability updates (reduced from 3s to reduce spam)
+    availabilityIntervalRef.current = setInterval(fetchAvailability, 15000);
+    
+    return () => {
+      if (availabilityIntervalRef.current) {
+        clearInterval(availabilityIntervalRef.current);
+        availabilityIntervalRef.current = null;
+      }
+    };
+    // Only re-run when shifts/employees IDs actually change, not on every render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shifts.map(s => s.id).sort().join(','), employees.map(e => e.id).sort().join(','), user?.userId]);
 
   const handleLoginSuccess = (userData: User) => {
     setUser(userData);
@@ -292,13 +437,103 @@ const App: React.FC = () => {
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDrop = (e: React.DragEvent, shiftId: string) => {
+  const handleDrop = async (e: React.DragEvent, shiftId: string) => {
     e.preventDefault();
     const employeeId = e.dataTransfer.getData('employeeId');
     if (employeeId) {
+      // Check if employee is available for this shift before assigning
+      const backendShiftId = parseInt(shiftId);
+      const backendEmployeeId = parseInt(employeeId);
+      
+      // Get available employees for this shift
+      const availableEmployeeIds = shiftAvailabilityMap.get(shiftId) || [];
+      
+      // Debug logging
+      console.log('═══════════════════════════════════════════════════════');
+      console.log('DRAG & DROP ASSIGNMENT:');
+      console.log(`  Shift ID (frontend string): ${shiftId}`);
+      console.log(`  Shift ID (backend number): ${backendShiftId}`);
+      console.log(`  Employee ID (frontend string): ${employeeId}`);
+      console.log(`  Employee ID (backend number): ${backendEmployeeId}`);
+      console.log(`  Available employee IDs for this shift:`, availableEmployeeIds);
+      console.log(`  Is employee in available list?`, availableEmployeeIds.includes(backendEmployeeId));
+      console.log(`  Shift availability map keys:`, Array.from(shiftAvailabilityMap.keys()));
+      console.log('═══════════════════════════════════════════════════════');
+      
+      // Skip frontend check - let backend validate (backend has the source of truth)
+      // Frontend check can be stale if availability was just updated
+      // We'll show the backend error message if assignment fails
+      
+      // Optimistically update UI
       setShifts(prev => prev.map(s => 
           s.id === shiftId ? { ...s, assignedEmployeeId: employeeId } : s
       ));
+      
+      // Save to database using the assign endpoint
+      try {
+        const response = await fetch(`/api/shifts/${backendShiftId}/assign`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            employeeId: backendEmployeeId
+          })
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          // Revert on error
+          setShifts(prev => prev.map(s => 
+              s.id === shiftId ? { ...s, assignedEmployeeId: null } : s
+          ));
+          console.error('Failed to assign employee to shift');
+          alert(errorData.message || 'Failed to assign employee to shift. Please try again.');
+        } else {
+          console.log(`✓ Assigned employee ${employeeId} to shift ${shiftId} in database`);
+          // Refresh shifts to get updated data from database
+          if (user) {
+            const today = new Date();
+            const day = today.getDay();
+            const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+            const monday = new Date(today.setDate(diff));
+            monday.setHours(0, 0, 0, 0);
+            
+            const shiftsResponse = await fetch(`/api/shifts?storeId=${user.storeId}&weekStart=${monday.toISOString()}`, {
+              credentials: 'include'
+            });
+            if (shiftsResponse.ok) {
+              const data = await shiftsResponse.json();
+              const mappedShifts: Shift[] = data.map((shift: any) => {
+                const startTime = new Date(shift.StartTime || shift.startTime);
+                const endTime = new Date(shift.EndTime || shift.endTime);
+                const dayName = startTime.toLocaleDateString('en-US', { weekday: 'long' });
+                const startHour = startTime.getHours();
+                const isMorning = startHour >= 9 && startHour < 15;
+                
+                return {
+                  id: (shift.ShiftId || shift.shiftId).toString(),
+                  day: dayName,
+                  startTime: startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false }),
+                  endTime: endTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false }),
+                  type: isMorning ? 'Morning' : 'Afternoon',
+                  targetSales: shift.RequiredProductivity || shift.requiredProductivity || 2500,
+                  assignedEmployeeId: shift.EmployeeId || shift.employeeId ? (shift.EmployeeId || shift.employeeId).toString() : null
+                };
+              });
+              setShifts(mappedShifts);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error assigning employee to shift:', err);
+        // Revert on error
+        setShifts(prev => prev.map(s => 
+            s.id === shiftId ? { ...s, assignedEmployeeId: null } : s
+        ));
+        alert('Error assigning employee to shift. Please try again.');
+      }
     }
   };
 
@@ -552,8 +787,66 @@ const App: React.FC = () => {
     setSuggestionLoading(null);
   };
 
-  const removeAssignment = (shiftId: string) => {
+  const removeAssignment = async (shiftId: string) => {
+    // Optimistically update UI
     setShifts(prev => prev.map(s => s.id === shiftId ? { ...s, assignedEmployeeId: null } : s));
+    
+    // Save to database - remove employee assignment
+    try {
+      const backendShiftId = parseInt(shiftId); // Frontend shift ID is the backend Shift_ID
+      
+      const response = await fetch(`/api/shifts/${backendShiftId}/assign`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          employeeId: null // Set to null to remove assignment
+        })
+      });
+      
+      if (!response.ok) {
+        console.error('Failed to remove employee assignment from shift');
+        // Refresh shifts to get correct state
+        if (user) {
+          const today = new Date();
+          const day = today.getDay();
+          const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+          const monday = new Date(today.setDate(diff));
+          monday.setHours(0, 0, 0, 0);
+          
+          const shiftsResponse = await fetch(`/api/shifts?storeId=${user.storeId}&weekStart=${monday.toISOString()}`, {
+            credentials: 'include'
+          });
+          if (shiftsResponse.ok) {
+            const data = await shiftsResponse.json();
+            const mappedShifts: Shift[] = data.map((shift: any) => {
+              const startTime = new Date(shift.StartTime || shift.startTime);
+              const endTime = new Date(shift.EndTime || shift.endTime);
+              const dayName = startTime.toLocaleDateString('en-US', { weekday: 'long' });
+              const startHour = startTime.getHours();
+              const isMorning = startHour >= 9 && startHour < 15;
+              
+              return {
+                id: (shift.ShiftId || shift.shiftId).toString(),
+                day: dayName,
+                startTime: startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false }),
+                endTime: endTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false }),
+                type: isMorning ? 'Morning' : 'Afternoon',
+                targetSales: shift.RequiredProductivity || shift.requiredProductivity || 2500,
+                assignedEmployeeId: shift.EmployeeId || shift.employeeId ? (shift.EmployeeId || shift.employeeId).toString() : null
+              };
+            });
+            setShifts(mappedShifts);
+          }
+        }
+      } else {
+        console.log(`✓ Removed employee assignment from shift ${shiftId} in database`);
+      }
+    } catch (err) {
+      console.error('Error removing employee assignment:', err);
+    }
   };
 
   // Show login page if not authenticated
@@ -725,6 +1018,62 @@ const App: React.FC = () => {
             {(user.role === 'Manager' || user.userType === 'Manager') && (
               <div className="flex items-center space-x-2">
                 <button 
+                    onClick={async () => {
+                      if (!confirm('This will delete and recreate all shifts for the current week and next 4 weeks. Continue?')) {
+                        return;
+                      }
+                      try {
+                        const response = await fetch(`/api/shifts/reinitialize?storeId=${user.storeId}`, {
+                          method: 'POST',
+                          credentials: 'include'
+                        });
+                        if (response.ok) {
+                          const data = await response.json();
+                          alert(`Success! ${data.message}\nDeleted: ${data.shiftsDeleted} shifts\nCreated: ${data.shiftsCreated} shifts`);
+                          // Refresh shifts
+                          const today = new Date();
+                          const day = today.getDay();
+                          const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+                          const monday = new Date(today.setDate(diff));
+                          monday.setHours(0, 0, 0, 0);
+                          const shiftsResponse = await fetch(`/api/shifts?storeId=${user.storeId}&weekStart=${monday.toISOString()}`, {
+                            credentials: 'include'
+                          });
+                          if (shiftsResponse.ok) {
+                            const shiftsData = await shiftsResponse.json();
+                            const mappedShifts: Shift[] = shiftsData.map((shift: any) => {
+                              const startTime = new Date(shift.StartTime || shift.startTime);
+                              const endTime = new Date(shift.EndTime || shift.endTime);
+                              const dayName = startTime.toLocaleDateString('en-US', { weekday: 'long' });
+                              const startHour = startTime.getHours();
+                              const isMorning = startHour >= 9 && startHour < 15;
+                              return {
+                                id: (shift.ShiftId || shift.shiftId).toString(),
+                                day: dayName,
+                                startTime: startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false }),
+                                endTime: endTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false }),
+                                type: isMorning ? 'Morning' : 'Afternoon',
+                                targetSales: shift.RequiredProductivity || shift.requiredProductivity || 2500,
+                                assignedEmployeeId: shift.EmployeeId || shift.employeeId ? (shift.EmployeeId || shift.employeeId).toString() : null
+                              };
+                            });
+                            setShifts(mappedShifts);
+                          }
+                        } else {
+                          const errorData = await response.json().catch(() => ({}));
+                          alert(`Error: ${errorData.message || errorData.error || 'Failed to reinitialize shifts'}`);
+                        }
+                      } catch (err: any) {
+                        alert(`Error: ${err.message}`);
+                      }
+                    }}
+                    className="flex items-center space-x-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg transform hover:scale-105 active:scale-95"
+                    title="Reinitialize Shifts (Delete and Recreate)"
+                >
+                    <i className="fas fa-redo"></i>
+                    <span className="hidden sm:inline ml-2">Reinit Shifts</span>
+                </button>
+                <button 
                     onClick={handleAutoFill}
                     disabled={isAutoFilling}
                     className="flex items-center space-x-2 bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 hover:from-rose-400 hover:via-purple-400 hover:to-cyan-400 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-rose-500/30 hover:shadow-lg hover:shadow-rose-500/40 disabled:opacity-50 transform hover:scale-105 active:scale-95 relative overflow-hidden group"
@@ -806,6 +1155,12 @@ const App: React.FC = () => {
                 <div>
                     <h2 className="text-xl font-black text-slate-800">לוח שיבוץ שבועי - <span className="text-2xl bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 bg-clip-text text-transparent">Shiftly</span></h2>
                     <p className="text-sm text-slate-600 mt-1">גרור עובדים מהרשימה כדי לשבץ למשמרות או השתמש בשיבוץ האוטומטי</p>
+                    {employees.length > 0 && (
+                      <p className="text-xs text-green-600 font-bold mt-2">
+                        <i className="fas fa-check-circle mr-1"></i>
+                        {employees.length} employees loaded from database
+                      </p>
+                    )}
                 </div>
             </div>
 
@@ -819,42 +1174,73 @@ const App: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-rose-100">
-                  {DAYS.map(day => {
-                    const morningShift = shifts.find(s => s.day === day && s.type === 'Morning')!;
-                    const afternoonShift = shifts.find(s => s.day === day && s.type === 'Afternoon')!;
-                    
-                    return (
-                      <tr key={day} className="group">
-                        <td className="px-8 py-10 font-extrabold text-slate-800 border-r border-rose-200 bg-rose-50/50 group-hover:bg-rose-100 transition-colors">
-                          {day}
-                        </td>
-                        <td className="px-8 py-6">
-                          <ShiftSlot 
-                            shift={morningShift} 
-                            onDrop={(e) => handleDrop(e, morningShift.id)} 
-                            onRemove={() => removeAssignment(morningShift.id)}
-                            onSuggest={() => requestSmartSuggestion(morningShift)}
-                            isLoading={suggestionLoading === morningShift.id}
-                            assignedEmployee={employees.find(e => e.id === morningShift.assignedEmployeeId)}
-                            availableEmployeeIds={shiftAvailabilityMap.get(morningShift.id) || []}
-                            allEmployees={employees}
-                          />
-                        </td>
-                        <td className="px-8 py-6">
-                          <ShiftSlot 
-                            shift={afternoonShift} 
-                            onDrop={(e) => handleDrop(e, afternoonShift.id)} 
-                            onRemove={() => removeAssignment(afternoonShift.id)}
-                            onSuggest={() => requestSmartSuggestion(afternoonShift)}
-                            isLoading={suggestionLoading === afternoonShift.id}
-                            assignedEmployee={employees.find(e => e.id === afternoonShift.assignedEmployeeId)}
-                            availableEmployeeIds={shiftAvailabilityMap.get(afternoonShift.id) || []}
-                            allEmployees={employees}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {loadingShifts ? (
+                    <tr>
+                      <td colSpan={3} className="px-8 py-12 text-center">
+                        <i className="fas fa-spinner fa-spin text-rose-500 text-2xl mb-2"></i>
+                        <p className="text-slate-600 font-bold">Loading shifts from database...</p>
+                      </td>
+                    </tr>
+                  ) : shifts.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="px-8 py-12 text-center">
+                        <i className="fas fa-calendar-times text-slate-400 text-2xl mb-2"></i>
+                        <p className="text-slate-600 font-bold">No shifts found</p>
+                        <p className="text-slate-500 text-sm mt-1">Shifts will appear here once they are created</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    DAYS.map(day => {
+                      const morningShift = shifts.find(s => s.day === day && s.type === 'Morning');
+                      const afternoonShift = shifts.find(s => s.day === day && s.type === 'Afternoon');
+                      
+                      return (
+                        <tr key={day} className="group">
+                          <td className="px-8 py-10 font-extrabold text-slate-800 border-r border-rose-200 bg-rose-50/50 group-hover:bg-rose-100 transition-colors">
+                            {day}
+                          </td>
+                          <td className="px-8 py-6">
+                            {morningShift ? (
+                              <ShiftSlot 
+                                shift={morningShift} 
+                                onDrop={(e) => handleDrop(e, morningShift.id)} 
+                                onRemove={() => removeAssignment(morningShift.id)}
+                                onSuggest={() => requestSmartSuggestion(morningShift)}
+                                isLoading={suggestionLoading === morningShift.id}
+                                assignedEmployee={employees.find(e => e.id === morningShift.assignedEmployeeId)}
+                                availableEmployeeIds={shiftAvailabilityMap.get(morningShift.id) || []}
+                                allEmployees={employees}
+                              />
+                            ) : (
+                              <div className="border-2 border-dashed border-rose-300 rounded-2xl p-6 text-center text-slate-400">
+                                <i className="fas fa-calendar-times mb-2"></i>
+                                <p className="text-xs">No morning shift</p>
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-8 py-6">
+                            {afternoonShift ? (
+                              <ShiftSlot 
+                                shift={afternoonShift} 
+                                onDrop={(e) => handleDrop(e, afternoonShift.id)} 
+                                onRemove={() => removeAssignment(afternoonShift.id)}
+                                onSuggest={() => requestSmartSuggestion(afternoonShift)}
+                                isLoading={suggestionLoading === afternoonShift.id}
+                                assignedEmployee={employees.find(e => e.id === afternoonShift.assignedEmployeeId)}
+                                availableEmployeeIds={shiftAvailabilityMap.get(afternoonShift.id) || []}
+                                allEmployees={employees}
+                              />
+                            ) : (
+                              <div className="border-2 border-dashed border-rose-300 rounded-2xl p-6 text-center text-slate-400">
+                                <i className="fas fa-calendar-times mb-2"></i>
+                                <p className="text-xs">No afternoon shift</p>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -865,6 +1251,7 @@ const App: React.FC = () => {
           employees={employees} 
           onDragStart={handleDragStart}
           employeeAvailabilityCount={employeeAvailabilityCount}
+          loading={loadingEmployees}
         />
       </main>
       )}
@@ -946,17 +1333,52 @@ const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, assignedEmployee, onDrop, 
                 <>
                     <i className="fas fa-plus mb-2 opacity-30 group-hover:scale-125 transition-transform"></i>
                     <span className="text-[10px] font-bold uppercase tracking-widest">פנוי</span>
-                    {availableEmployees.length > 0 && (
-                        <div className="mt-2 flex items-center space-x-1">
-                            <span className="text-[9px] text-green-600 font-bold">
-                                <i className="fas fa-users mr-1"></i>
-                                {availableEmployees.length} available
-                            </span>
+                    {availableEmployees.length > 0 ? (
+                        <div className="mt-2 w-full">
+                            <div className="flex items-center justify-center space-x-1 mb-2">
+                                <span className="text-[9px] text-green-600 font-bold">
+                                    <i className="fas fa-users mr-1"></i>
+                                    {availableEmployees.length} available
+                                </span>
+                            </div>
+                            {/* Show list of available employees on hover */}
+                            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-green-300 rounded-lg shadow-xl p-3 z-50 max-h-48 overflow-y-auto">
+                                    <p className="text-[10px] font-bold text-green-700 mb-2 text-center">
+                                        <i className="fas fa-check-circle mr-1"></i>
+                                        Available Employees:
+                                    </p>
+                                    <div className="space-y-1">
+                                        {availableEmployees.map((emp) => (
+                                            <div 
+                                                key={emp.id}
+                                                className="flex items-center space-x-2 p-1.5 rounded hover:bg-green-50 transition-colors"
+                                            >
+                                                <img 
+                                                    src={emp.avatar} 
+                                                    alt={emp.name}
+                                                    className="w-6 h-6 rounded-full border border-green-300"
+                                                />
+                                                <span className="text-[10px] font-semibold text-slate-700 truncate flex-1">
+                                                    {emp.name}
+                                                </span>
+                                                <span className="text-[9px] text-green-600 font-bold">
+                                                    {emp.productivityScore}%
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="mt-2 text-[9px] text-slate-400 italic">
+                            No employees available
                         </div>
                     )}
                     <button 
                         onClick={(e) => { e.stopPropagation(); onSuggest(); }}
-                        className="absolute bottom-2 right-2 bg-white hover:bg-gradient-to-r hover:from-rose-500 hover:via-purple-500 hover:to-cyan-500 hover:text-white p-2 rounded-lg text-slate-400 transition-all opacity-0 group-hover:opacity-100 shadow-md"
+                        className="absolute bottom-2 right-2 bg-white hover:bg-gradient-to-r hover:from-rose-500 hover:via-purple-500 hover:to-cyan-500 hover:text-white p-2 rounded-lg text-slate-400 transition-all opacity-0 group-hover:opacity-100 shadow-md pointer-events-auto"
                         title="Smart Suggestion"
                     >
                         <i className="fas fa-wand-magic-sparkles text-xs"></i>

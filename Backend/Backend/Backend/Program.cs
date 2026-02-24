@@ -3,6 +3,7 @@ using EntityFrameworkCore.Jet;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
+using System.Data.OleDb;
 using System.Net;
 
 namespace Backend
@@ -13,13 +14,20 @@ namespace Backend
         {
             var builder = WebApplication.CreateBuilder(args);
 
+            // Fix for Access: EF Core Jet needs a "Dual" table. Create it and tell Jet to use it (avoids "cannot find #Dual").
+            var connectionString = builder.Configuration.GetConnectionString("ShiftlyConnection")
+                ?? "Data Source=C:\\Users\\aleen\\Documents\\ShiftlyDB.accdb";
+            EnsureDualTableExists(connectionString);
+            SetJetDualToTableDual();
+
             // Add services to the container.
             builder.Services.AddControllersWithViews()
                 .AddJsonOptions(options =>
                 {
-                    // Ensure JSON serialization works properly
-                    options.JsonSerializerOptions.PropertyNamingPolicy = null; // Use PascalCase
+                    options.JsonSerializerOptions.PropertyNamingPolicy = null;
                     options.JsonSerializerOptions.WriteIndented = false;
+                    // Frontend sends camelCase (e.g. slotNumber); accept it for model binding
+                    options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
                 });
 
             // Add CORS to allow frontend to call backend API
@@ -35,8 +43,7 @@ namespace Backend
             });
 
             // Database: AppData with Access / Jet
-            var connectionString = builder.Configuration.GetConnectionString("ShiftlyConnection")
-                ?? "Data Source=..\\..\\..\\..\\DB\\ShiftlyDB.accdb";
+            Console.WriteLine($"✓ Database connection: {connectionString}");
 
             // Configure DbContext with proper connection management for Access
             builder.Services.AddDbContext<AppData>(options =>
@@ -300,6 +307,64 @@ namespace Backend
                 pattern: "{controller=Home}/{action=Index}/{id?}");
 
             await app.RunAsync();
+        }
+
+        /// <summary>Create a physical "Dual" table in Access (one row). EF Core Jet needs this; otherwise you get "cannot find #Dual".</summary>
+        private static void EnsureDualTableExists(string connectionString)
+        {
+            try
+            {
+                var oledb = connectionString.Trim();
+                if (!oledb.Contains("Provider=", StringComparison.OrdinalIgnoreCase))
+                    oledb = "Provider=Microsoft.ACE.OLEDB.12.0;" + (oledb.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) ? oledb : "Data Source=" + oledb) + ";";
+                using var conn = new OleDbConnection(oledb);
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                bool tableExists = false;
+                try
+                {
+                    cmd.CommandText = "SELECT COUNT(*) FROM [Dual]";
+                    cmd.ExecuteScalar();
+                    tableExists = true;
+                }
+                catch { /* table missing */ }
+                if (!tableExists)
+                {
+                    cmd.CommandText = "CREATE TABLE [Dual] (id AUTOINCREMENT PRIMARY KEY)";
+                    cmd.ExecuteNonQuery();
+                    cmd.CommandText = "INSERT INTO [Dual] (id) VALUES (1)";
+                    cmd.ExecuteNonQuery();
+                    Console.WriteLine("✓ Dual table created in Access");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Dual table (non-fatal): {ex.Message}");
+            }
+        }
+
+        /// <summary>Set Jet DUAL to use the physical "Dual" table so EF Core stops looking for #Dual.</summary>
+        private static void SetJetDualToTableDual()
+        {
+            try
+            {
+                var asm = System.Reflection.Assembly.Load(new System.Reflection.AssemblyName("EntityFrameworkCore.Jet"));
+                var jetConfig = asm.GetType("EntityFrameworkCore.Jet.Infrastructure.JetConfiguration")
+                    ?? asm.GetTypes().FirstOrDefault(t => t.Name == "JetConfiguration");
+                if (jetConfig != null)
+                {
+                    var dualProp = jetConfig.GetProperty("DUAL", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    if (dualProp != null)
+                    {
+                        dualProp.SetValue(null, "Dual");
+                        Console.WriteLine("✓ Jet DUAL set to table 'Dual'");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Jet DUAL config (non-fatal): {ex.Message}");
+            }
         }
     }
 }
