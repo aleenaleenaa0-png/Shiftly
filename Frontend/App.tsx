@@ -1114,7 +1114,7 @@ const App: React.FC = () => {
         // Employees see the Worker Portal
         <WorkerPortal user={user} onLogout={handleLogout} />
       ) : currentPage === 'employees' ? (
-        <EmployeeManagement />
+        <EmployeeManagement user={user} />
       ) : currentPage === 'users' ? (
         <UserManagement />
       ) : currentPage === 'availability' ? (

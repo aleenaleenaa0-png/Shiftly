@@ -18,18 +18,17 @@ namespace Backend.Controllers
 
         // GET: api/Employees
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<object>>> GetEmployees()
+        public async Task<ActionResult<IEnumerable<object>>> GetEmployees([FromQuery] int? storeId = null)
         {
             try
             {
-                // Ensure Employees table exists with correct schema
+                // Ensure Employees table exists with correct schema (Access has FirstName, not LastName)
                 bool employeesTableNeedsRecreation = false;
                 try
                 {
-                    // Try to query with all expected columns
                     var testEmployee = await _db.Employees
                         .OrderBy(e => e.EmployeeId)
-                        .Select(e => new { e.EmployeeId, e.FirstName, e.LastName, e.HourlyWage, e.ProductivityScore, e.StoreId })
+                        .Select(e => new { e.EmployeeId, e.FirstName, e.HourlyWage, e.ProductivityScore, e.StoreId })
                         .FirstOrDefaultAsync();
                     Console.WriteLine("✓ Employees table exists with correct schema");
                 }
@@ -110,18 +109,21 @@ namespace Backend.Controllers
                     }
                 }
 
-                // Get employees - use left join to handle cases where Store might not exist
-                var employees = await _db.Employees
+                // Get employees (Access DB has FirstName only, no LastName). Optionally filter by store.
+                var query = _db.Employees.AsQueryable();
+                if (storeId.HasValue && storeId.Value > 0)
+                    query = query.Where(e => e.StoreId == storeId.Value);
+
+                var employees = await query
                     .Select(e => new
                     {
                         e.EmployeeId,
                         e.FirstName,
-                        e.LastName,
-                        e.HourlyWage,
+                        HourlyWage = e.HourlyWage,
                         e.ProductivityScore,
                         e.StoreId,
                         StoreName = e.Store != null ? e.Store.Name : null,
-                        FullName = $"{e.FirstName} {e.LastName}"
+                        FullName = e.FirstName
                     })
                     .ToListAsync();
 

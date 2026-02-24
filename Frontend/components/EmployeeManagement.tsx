@@ -17,7 +17,19 @@ interface Store {
   name: string;
 }
 
-const EmployeeManagement: React.FC = () => {
+interface User {
+  userId: number;
+  storeId: number;
+  fullName?: string;
+  role?: string;
+  userType?: string;
+}
+
+interface EmployeeManagementProps {
+  user?: User | null;
+}
+
+const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ user }) => {
   const [employees, setEmployees] = useState<BackendEmployee[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,12 +44,15 @@ const EmployeeManagement: React.FC = () => {
     storeId: 1
   });
 
-  // Fetch employees from backend
+  // Fetch employees from backend (optionally scoped to manager's store)
   const fetchEmployees = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch('/api/employees', {
+      const url = user?.storeId
+        ? `/api/employees?storeId=${user.storeId}`
+        : '/api/employees';
+      const response = await fetch(url, {
         credentials: 'include'
       });
       
@@ -53,16 +68,16 @@ const EmployeeManagement: React.FC = () => {
       }
       
       const data = await response.json();
-      // Map backend response to frontend format (handle capitalized property names)
-      const mappedEmployees = data.map((emp: any) => ({
-        employeeId: emp.EmployeeId || emp.employeeId,
-        firstName: emp.FirstName || emp.firstName,
-        lastName: emp.LastName || emp.lastName,
-        hourlyWage: emp.HourlyWage || emp.hourlyWage,
-        productivityScore: emp.ProductivityScore || emp.productivityScore,
-        storeId: emp.StoreId || emp.storeId,
-        storeName: emp.StoreName || emp.storeName,
-        fullName: emp.FullName || emp.fullName
+      // Map backend response (Access DB has FirstName only; FullName is FirstName)
+      const mappedEmployees = (Array.isArray(data) ? data : []).map((emp: any) => ({
+        employeeId: emp.EmployeeId ?? emp.employeeId,
+        firstName: emp.FirstName ?? emp.firstName ?? '',
+        lastName: emp.LastName ?? emp.lastName ?? '',
+        hourlyWage: emp.HourlyWage ?? emp.hourlyWage ?? 0,
+        productivityScore: emp.ProductivityScore ?? emp.productivityScore ?? 0,
+        storeId: emp.StoreId ?? emp.storeId,
+        storeName: emp.StoreName ?? emp.storeName,
+        fullName: emp.FullName ?? emp.fullName ?? (emp.FirstName ?? emp.firstName ?? '')
       }));
       
       // Fetch availability count for each employee
@@ -120,7 +135,7 @@ const EmployeeManagement: React.FC = () => {
   useEffect(() => {
     fetchEmployees();
     fetchStores();
-  }, []);
+  }, [user?.storeId, user?.userId]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -199,6 +214,7 @@ const EmployeeManagement: React.FC = () => {
     try {
       const response = await fetch(`/api/employees/${id}`, {
         method: 'DELETE',
+        credentials: 'include'
       });
 
       if (!response.ok) {
@@ -422,7 +438,7 @@ const EmployeeManagement: React.FC = () => {
                       <tr key={employee.employeeId} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
                           <div className="font-bold text-slate-900">
-                            {employee.fullName || `${employee.firstName} ${employee.lastName}`}
+                            {(employee.fullName || [employee.firstName, employee.lastName].filter(Boolean).join(' ')).trim() || '—'}
                           </div>
                         </td>
                         <td className="px-6 py-4 text-slate-600">
