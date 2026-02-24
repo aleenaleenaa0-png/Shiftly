@@ -7,46 +7,65 @@ interface Shift {
   endTime: string;
   role: string;
   date: string;
+  slotNumber: number; // 1-14: Mon AM=1, Mon PM=2, ... Sun PM=14
 }
 
 interface WorkerFinalScheduleProps {
   userName: string;
   userId: number;
+  storeId: number;
 }
 
 import { DAYS } from '../constants';
 
 const DAYS_OF_WEEK = DAYS;
 
-const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, userId }) => {
+const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, userId, storeId }) => {
   const [insights, setInsights] = useState<string | null>(null);
   const [loadingInsights, setLoadingInsights] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch shifts from backend
+  // Fetch shifts when employee enters the schedule page (current week, their store)
   useEffect(() => {
     const fetchShifts = async () => {
+      if (!userId || !storeId) return;
       try {
         setLoading(true);
-        // Fetch shifts for the current week
-        const response = await fetch('/api/shifts', {
-          credentials: 'include'
+        const today = new Date();
+        const day = today.getDay();
+        const diff = day === 0 ? -6 : 1 - day;
+        const monday = new Date(today);
+        monday.setDate(today.getDate() + diff);
+        monday.setHours(0, 0, 0, 0);
+        const weekStartISO = monday.toISOString();
+        const response = await fetch(`/api/shifts?storeId=${storeId}&weekStart=${weekStartISO}`, {
+          credentials: 'include',
+          cache: 'no-cache'
         });
-        
+
         if (response.ok) {
           const data = await response.json();
-          // Filter shifts for this user and map to the format we need
-          const userShifts = data
-            .filter((shift: any) => shift.assignedEmployeeId === userId || shift.AssignedEmployeeId === userId)
-            .map((shift: any) => ({
-              id: shift.id || shift.ShiftId?.toString() || '',
-              workerName: userName,
-              startTime: shift.startTime || shift.StartTime || '09:00',
-              endTime: shift.endTime || shift.EndTime || '17:00',
-              role: 'Employee',
-              date: shift.date || shift.Date || new Date().toISOString()
-            }));
+          const employeeId = userId;
+          const userShifts: Shift[] = (data || [])
+            .filter((s: any) => (s.EmployeeId ?? s.employeeId) === employeeId)
+            .map((s: any) => {
+              const start = s.StartTime ?? s.startTime;
+              const end = s.EndTime ?? s.endTime;
+              const startDate = typeof start === 'string' ? new Date(start) : start;
+              const endDate = typeof end === 'string' ? new Date(end) : end;
+              const startTimeStr = startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+              const endTimeStr = endDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+              return {
+                id: String(s.ShiftId ?? s.shiftId ?? ''),
+                workerName: userName,
+                startTime: startTimeStr,
+                endTime: endTimeStr,
+                role: 'Employee',
+                date: startDate.toISOString(),
+                slotNumber: s.SlotNumber ?? s.slotNumber ?? 0
+              };
+            });
           setShifts(userShifts);
         }
       } catch (err) {
@@ -56,10 +75,8 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
       }
     };
 
-    if (userId) {
-      fetchShifts();
-    }
-  }, [userId, userName]);
+    fetchShifts();
+  }, [userId, userName, storeId]);
 
   useEffect(() => {
     if (shifts.length > 0) {
@@ -84,14 +101,12 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
     }
   }, [shifts]);
 
+  // SlotNumber 1=Mon Morning, 2=Mon Evening, 3=Tue Morning, ... 14=Sun Evening
   const getShiftForSlot = (day: string, slot: 'morning' | 'evening') => {
-    return shifts.find(s => {
-      const shiftDate = new Date(s.date);
-      const dayName = shiftDate.toLocaleDateString('en-US', { weekday: 'long' });
-      if (dayName !== day) return false;
-      const hour = parseInt(s.startTime.split(':')[0]);
-      return slot === 'morning' ? hour < 12 : hour >= 12;
-    });
+    const dayIndex = DAYS_OF_WEEK.indexOf(day);
+    if (dayIndex === -1) return undefined;
+    const wantSlotNumber = slot === 'morning' ? dayIndex * 2 + 1 : dayIndex * 2 + 2;
+    return shifts.find(s => s.slotNumber === wantSlotNumber);
   };
 
   if (loading) {

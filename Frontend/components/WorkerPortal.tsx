@@ -31,9 +31,15 @@ const WorkerPortal: React.FC<WorkerPortalProps> = ({ user, onLogout }) => {
     const fetchStats = async () => {
       try {
         // Fetch shifts to calculate stats
-        const shiftsResponse = await fetch('/api/shifts', {
-          credentials: 'include'
-        });
+        const today = new Date();
+          const day = today.getDay();
+          const diff = day === 0 ? -6 : 1 - day;
+          const monday = new Date(today);
+          monday.setDate(today.getDate() + diff);
+          monday.setHours(0, 0, 0, 0);
+          const shiftsResponse = await fetch(`/api/shifts?storeId=${user.storeId}&weekStart=${monday.toISOString()}`, {
+            credentials: 'include'
+          });
         
         if (shiftsResponse.ok) {
           const shifts = await shiftsResponse.json();
@@ -117,7 +123,7 @@ const WorkerPortal: React.FC<WorkerPortalProps> = ({ user, onLogout }) => {
             {activeTab === 'availability' ? (
               <WorkerAvailabilityPicker userId={user.userId} />
             ) : (
-              <WorkerFinalSchedule userName={user.fullName} userId={user.userId} />
+              <WorkerFinalSchedule userName={user.fullName} userId={user.userId} storeId={user.storeId} />
             )}
           </div>
 
