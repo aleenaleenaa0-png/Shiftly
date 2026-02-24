@@ -341,13 +341,10 @@ const App: React.FC = () => {
             });
             if (response.ok) {
               const data = await response.json();
-              // Get employee IDs from availability records where IsAvailable = true
-              // Backend endpoint only returns records where IsAvailable is true
-              const employeeIds = data
-                .filter((a: any) => a.IsAvailable === true) // Double-check IsAvailable is true
-                .map((a: any) => a.EmployeeId || a.employeeId)
-                .filter((id: any) => id != null && !isNaN(id));
-              
+              // Backend returns only available employees; normalize IDs to numbers for consistent comparison
+              const employeeIds = (Array.isArray(data) ? data : [])
+                .map((a: any) => Number(a.EmployeeId ?? a.employeeId))
+                .filter((id: number) => !isNaN(id) && id > 0);
               return { shiftId: frontendShift.id, employeeIds };
             }
           } catch (err) {
@@ -441,29 +438,23 @@ const App: React.FC = () => {
     e.preventDefault();
     const employeeId = e.dataTransfer.getData('employeeId');
     if (employeeId) {
-      // Check if employee is available for this shift before assigning
       const backendShiftId = parseInt(shiftId);
       const backendEmployeeId = parseInt(employeeId);
-      
-      // Get available employees for this shift
       const availableEmployeeIds = shiftAvailabilityMap.get(shiftId) || [];
-      
-      // Debug logging
-      console.log('═══════════════════════════════════════════════════════');
-      console.log('DRAG & DROP ASSIGNMENT:');
-      console.log(`  Shift ID (frontend string): ${shiftId}`);
-      console.log(`  Shift ID (backend number): ${backendShiftId}`);
-      console.log(`  Employee ID (frontend string): ${employeeId}`);
-      console.log(`  Employee ID (backend number): ${backendEmployeeId}`);
-      console.log(`  Available employee IDs for this shift:`, availableEmployeeIds);
-      console.log(`  Is employee in available list?`, availableEmployeeIds.includes(backendEmployeeId));
-      console.log(`  Shift availability map keys:`, Array.from(shiftAvailabilityMap.keys()));
-      console.log('═══════════════════════════════════════════════════════');
-      
-      // Skip frontend check - let backend validate (backend has the source of truth)
-      // Frontend check can be stale if availability was just updated
-      // We'll show the backend error message if assignment fails
-      
+      const isAvailableForShift = availableEmployeeIds.some((id: number | string) => Number(id) === backendEmployeeId);
+
+      // Only block if we have data and the employee is not in the list (avoid blocking when for-shift failed or not loaded yet)
+      if (availableEmployeeIds.length > 0 && !isAvailableForShift) {
+        const emp = employees.find(e => e.id === employeeId);
+        const name = emp?.name ?? 'This employee';
+        alert(
+          `Only employees who have set availability for this shift can be assigned.\n\n` +
+          `${name} has not marked themselves available for this shift. ` +
+          `They can set their availability in the Worker Portal (Availability / Set Availability), then you can assign them here.`
+        );
+        return;
+      }
+
       // Optimistically update UI
       setShifts(prev => prev.map(s => 
           s.id === shiftId ? { ...s, assignedEmployeeId: employeeId } : s
@@ -1313,8 +1304,8 @@ const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, assignedEmployee, onDrop, 
         );
     }
 
-        const availableEmployees = allEmployees.filter(emp => 
-            availableEmployeeIds.includes(parseInt(emp.id))
+        const availableEmployees = allEmployees.filter(emp =>
+            availableEmployeeIds.some((id: number | string) => Number(id) === Number(emp.id))
         );
 
         return (
@@ -1332,48 +1323,35 @@ const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, assignedEmployee, onDrop, 
             ) : (
                 <>
                     <i className="fas fa-plus mb-2 opacity-30 group-hover:scale-125 transition-transform"></i>
-                    <span className="text-[10px] font-bold uppercase tracking-widest">פנוי</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest">
+                        {availableEmployees.length > 0 ? 'Drag available employee here' : 'Empty'}
+                    </span>
                     {availableEmployees.length > 0 ? (
                         <div className="mt-2 w-full">
-                            <div className="flex items-center justify-center space-x-1 mb-2">
+                            <div className="flex items-center justify-center space-x-1 mb-1">
                                 <span className="text-[9px] text-green-600 font-bold">
-                                    <i className="fas fa-users mr-1"></i>
-                                    {availableEmployees.length} available
+                                    <i className="fas fa-check-circle mr-1"></i>
+                                    {availableEmployees.length} available — drag from sidebar
                                 </span>
                             </div>
-                            {/* Show list of available employees on hover */}
-                            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                                <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-green-300 rounded-lg shadow-xl p-3 z-50 max-h-48 overflow-y-auto">
-                                    <p className="text-[10px] font-bold text-green-700 mb-2 text-center">
-                                        <i className="fas fa-check-circle mr-1"></i>
-                                        Available Employees:
-                                    </p>
-                                    <div className="space-y-1">
-                                        {availableEmployees.map((emp) => (
-                                            <div 
-                                                key={emp.id}
-                                                className="flex items-center space-x-2 p-1.5 rounded hover:bg-green-50 transition-colors"
-                                            >
-                                                <img 
-                                                    src={emp.avatar} 
-                                                    alt={emp.name}
-                                                    className="w-6 h-6 rounded-full border border-green-300"
-                                                />
-                                                <span className="text-[10px] font-semibold text-slate-700 truncate flex-1">
-                                                    {emp.name}
-                                                </span>
-                                                <span className="text-[9px] text-green-600 font-bold">
-                                                    {emp.productivityScore}%
-                                                </span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
+                            <div className="flex flex-wrap justify-center gap-1 mt-1">
+                                {availableEmployees.slice(0, 5).map((emp) => (
+                                    <span
+                                        key={emp.id}
+                                        className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-100 text-green-800 text-[9px] font-semibold border border-green-300"
+                                        title={`${emp.name} — ${emp.productivityScore}%`}
+                                    >
+                                        {emp.name.split(' ')[0]}
+                                    </span>
+                                ))}
+                                {availableEmployees.length > 5 && (
+                                    <span className="text-[9px] text-green-600 font-bold">+{availableEmployees.length - 5}</span>
+                                )}
                             </div>
                         </div>
                     ) : (
-                        <div className="mt-2 text-[9px] text-slate-400 italic">
-                            No employees available
+                        <div className="mt-2 text-[9px] text-slate-400 italic text-center px-2">
+                            No one has set availability for this shift. Ask employees to set availability in the Worker Portal.
                         </div>
                     )}
                     <button 

@@ -104,10 +104,10 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ employees, onDragStar
         <div className="mt-10 p-6 bg-gradient-to-br from-rose-500 via-purple-500 to-cyan-500 rounded-3xl text-white shadow-xl shadow-rose-500/30">
           <div className="flex items-center mb-3">
             <i className="fas fa-lightbulb text-yellow-200 mr-2"></i>
-            <p className="text-[11px] font-black uppercase tracking-widest text-white/90">טיפ למנהל</p>
+            <p className="text-[11px] font-black uppercase tracking-widest text-white/90">Manager tip</p>
           </div>
           <p className="text-sm leading-relaxed font-medium text-white">
-            שבץ את העובדים עם ציון היעילות הגבוה ביותר למשמרות הערב, שם פוטנציאל המכירות הוא הגבוה ביותר.
+            Drag employees onto a shift only if they have set availability for that shift (see &quot;X shifts&quot; badge). Employees set availability in the Worker Portal; then you can assign them here.
           </p>
         </div>
       </div>
