@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Shift, Employee, ScheduleKPIs } from './types';
 import { DAYS } from './constants';
 import KPIBanner from './components/KPIBanner';
@@ -74,6 +74,7 @@ const App: React.FC = () => {
   const [backendError, setBackendError] = useState<string | null>(null);
   const [shiftAvailabilityMap, setShiftAvailabilityMap] = useState<Map<string, number[]>>(new Map()); // shiftId -> employeeIds
   const [employeeAvailabilityCount, setEmployeeAvailabilityCount] = useState<Map<string, number>>(new Map()); // employeeId -> count
+  const [employeeAvailabilityMap, setEmployeeAvailabilityMap] = useState<Map<string, Record<string, boolean>>>(new Map()); // employeeId -> availabilityMap (slot 1-14 -> boolean)
   const availabilityIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastShiftIdsRef = useRef<string>('');
   const lastEmployeeIdsRef = useRef<string>('');
@@ -201,7 +202,14 @@ const App: React.FC = () => {
             };
           });
 
-          setEmployees(mappedEmployees);
+          // Filter out "wow", "test", and "root" users (case-insensitive) from drag-and-drop list
+          const filteredEmployees = mappedEmployees.filter(emp => {
+            const name = (emp.name || '').trim().toLowerCase();
+            const excludedNames = ['wow', 'test', 'root'];
+            return !excludedNames.includes(name);
+          });
+
+          setEmployees(filteredEmployees);
           console.log(`✓ Successfully loaded ${mappedEmployees.length} employees from Access database`);
           console.log('═══════════════════════════════════════════════════════');
         } else {
@@ -284,6 +292,150 @@ const App: React.FC = () => {
     fetchShifts();
   }, [user]);
 
+  // Expose fetchAvailability function so it can be called manually
+  const fetchAvailability = useCallback(async () => {
+    // Only fetch if we have shifts and employees loaded
+    if (shifts.length === 0 || employees.length === 0) {
+      console.log('Manager: Skipping availability fetch - shifts or employees not loaded yet');
+      return;
+    }
+    
+    try {
+      console.log('═══════════════════════════════════════════════════════');
+      console.log('Manager: Fetching availability for shifts and employees...');
+      console.log(`  Shifts: ${shifts.length}, Employees: ${employees.length}`);
+      
+      // Fetch availability for each shift using backend shift IDs (shifts already have real IDs from database)
+      // This gets employees who have marked themselves as available for each shift
+      const shiftAvailabilityPromises = shifts.map(async (frontendShift) => {
+        try {
+          const backendShiftId = parseInt(frontendShift.id); // Frontend shift ID is the backend Shift_ID
+          if (isNaN(backendShiftId)) {
+            console.warn(`⚠ Manager: Invalid shift ID: ${frontendShift.id}`);
+            return { shiftId: frontendShift.id, employeeIds: [] };
+          }
+          
+          const response = await fetch(`/api/availabilities/for-shift/${backendShiftId}`, {
+            credentials: 'include',
+            cache: 'no-cache' // Always get fresh data from database
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            console.log(`Manager: Shift ${backendShiftId} (${frontendShift.day} ${frontendShift.type}) - API returned:`, data);
+            
+            // Backend returns only available employees; normalize IDs to numbers for consistent comparison
+            const employeeIds = (Array.isArray(data) ? data : [])
+              .map((a: any) => Number(a.EmployeeId ?? a.employeeId))
+              .filter((id: number) => !isNaN(id) && id > 0);
+            
+            console.log(`Manager: Shift ${backendShiftId} - Available employee IDs:`, employeeIds);
+            
+            if (employeeIds.length > 0) {
+              const employeeNames = employeeIds.map(id => {
+                const emp = employees.find(e => Number(e.id) === id);
+                return emp?.name || `ID:${id}`;
+              });
+              console.log(`Manager: Shift ${backendShiftId} - Available employees:`, employeeNames);
+            }
+            
+            return { shiftId: frontendShift.id, employeeIds };
+          } else {
+            const errorText = await response.text();
+            console.error(`Manager: Failed to fetch availability for shift ${backendShiftId}:`, response.status, errorText);
+          }
+        } catch (err) {
+          console.error(`Manager: Error fetching availability for shift ${frontendShift.id}:`, err);
+        }
+        return { shiftId: frontendShift.id, employeeIds: [] };
+      });
+
+      const shiftResults = await Promise.all(shiftAvailabilityPromises);
+      const newShiftMap = new Map<string, number[]>();
+      let totalAvailable = 0;
+      shiftResults.forEach(result => {
+        newShiftMap.set(result.shiftId, result.employeeIds);
+        totalAvailable += result.employeeIds.length;
+      });
+      console.log(`Manager: Total available assignments found: ${totalAvailable} across ${shiftResults.length} shifts`);
+      setShiftAvailabilityMap(newShiftMap);
+
+      // Fetch availability map for each employee using their real backend IDs
+      const employeeAvailabilityPromises = employees.map(async (frontendEmp) => {
+        try {
+          const backendEmpId = parseInt(frontendEmp.id); // Frontend employee ID is the backend EmployeeId
+          console.log(`Manager: Fetching availability for employee ${frontendEmp.name} (Frontend ID: ${frontendEmp.id}, Backend ID: ${backendEmpId})`);
+          
+          const response = await fetch(`/api/availabilities/all-for-employee/${backendEmpId}`, {
+            credentials: 'include',
+            cache: 'no-cache'
+          });
+          
+          console.log(`Manager: Response for ${frontendEmp.name}: status=${response.status}, ok=${response.ok}`);
+          
+          if (response.ok) {
+            const data = await response.json();
+            console.log(`Manager: Raw availability data for ${frontendEmp.name}:`, JSON.stringify(data, null, 2));
+            
+            const availabilityMap = data.availabilityMap || {};
+            console.log(`Manager: Parsed availabilityMap for ${frontendEmp.name}:`, availabilityMap);
+            
+            // Count available shifts (where value is true)
+            const count = Object.values(availabilityMap).filter((v: any) => v === true).length;
+            
+            console.log(`Manager: Employee ${frontendEmp.name} (ID:${backendEmpId}) - Available shifts count: ${count}`);
+            console.log(`Manager: Employee ${frontendEmp.name} - Availability map keys:`, Object.keys(availabilityMap));
+            console.log(`Manager: Employee ${frontendEmp.name} - Availability map values:`, Object.values(availabilityMap));
+            
+            if (count > 0) {
+              console.log(`✓ Manager: Employee ${frontendEmp.name} (ID:${backendEmpId}) has ${count} available shifts`);
+            } else {
+              console.warn(`⚠ Manager: Employee ${frontendEmp.name} (ID:${backendEmpId}) has NO available shifts`);
+            }
+            
+            return { employeeId: frontendEmp.id, count, availabilityMap };
+          } else {
+            const errorText = await response.text();
+            console.warn(`Manager: Failed to fetch availability for employee ${frontendEmp.name} (ID:${backendEmpId}):`, response.status, errorText);
+          }
+        } catch (err) {
+          console.error(`Manager: Error fetching availability for employee ${frontendEmp.id}:`, err);
+        }
+        return { employeeId: frontendEmp.id, count: 0, availabilityMap: {} };
+      });
+
+      const employeeResults = await Promise.all(employeeAvailabilityPromises);
+      const newEmployeeMap = new Map<string, number>();
+      const newAvailabilityMap = new Map<string, Record<string, boolean>>();
+      
+      console.log('Manager: Processing availability results...');
+      employeeResults.forEach(result => {
+        console.log(`Manager: Setting availability for employee ID ${result.employeeId}: count=${result.count}, map keys=${Object.keys(result.availabilityMap).join(',')}`);
+        newEmployeeMap.set(result.employeeId, result.count);
+        newAvailabilityMap.set(result.employeeId, result.availabilityMap);
+      });
+      
+      // Log the final maps
+      console.log('Manager: Final employeeAvailabilityCount map:', Array.from(newEmployeeMap.entries()));
+      console.log('Manager: Final employeeAvailabilityMap keys:', Array.from(newAvailabilityMap.keys()));
+      newAvailabilityMap.forEach((map, empId) => {
+        const availableSlots = Object.entries(map).filter(([_, v]) => v === true).map(([k, _]) => k);
+        if (availableSlots.length > 0) {
+          console.log(`Manager: Employee ${empId} has availability for slots: ${availableSlots.join(', ')}`);
+        }
+      });
+      
+      const totalEmployeeAvailability = Array.from(newEmployeeMap.values()).reduce((sum, count) => sum + count, 0);
+      console.log(`Manager: Total employee availability count: ${totalEmployeeAvailability}`);
+      console.log('═══════════════════════════════════════════════════════');
+      
+      setEmployeeAvailabilityCount(newEmployeeMap);
+      setEmployeeAvailabilityMap(newAvailabilityMap);
+    } catch (err) {
+      console.error('Manager: Error in fetchAvailability:', err);
+    }
+  }, [shifts, employees]);
+
   // Fetch availability for all shifts and employees - fully dynamic from database
   useEffect(() => {
     if (!user || (user.role !== 'Manager' && user.userType !== 'Manager')) {
@@ -318,81 +470,10 @@ const App: React.FC = () => {
       return;
     }
 
-    const fetchAvailability = async () => {
-      // Only fetch if we have shifts and employees loaded
-      if (shifts.length === 0 || employees.length === 0) {
-        return;
-      }
-      
-      try {
-        // Fetch availability for each shift using backend shift IDs (shifts already have real IDs from database)
-        // This gets employees who have marked themselves as available for each shift
-        const shiftAvailabilityPromises = shifts.map(async (frontendShift) => {
-          try {
-            const backendShiftId = parseInt(frontendShift.id); // Frontend shift ID is the backend Shift_ID
-            if (isNaN(backendShiftId)) {
-              console.warn(`⚠ Invalid shift ID: ${frontendShift.id}`);
-              return { shiftId: frontendShift.id, employeeIds: [] };
-            }
-            
-            const response = await fetch(`/api/availabilities/for-shift/${backendShiftId}`, {
-              credentials: 'include',
-              cache: 'no-cache' // Always get fresh data from database
-            });
-            if (response.ok) {
-              const data = await response.json();
-              // Backend returns only available employees; normalize IDs to numbers for consistent comparison
-              const employeeIds = (Array.isArray(data) ? data : [])
-                .map((a: any) => Number(a.EmployeeId ?? a.employeeId))
-                .filter((id: number) => !isNaN(id) && id > 0);
-              return { shiftId: frontendShift.id, employeeIds };
-            }
-          } catch (err) {
-            // Silently fail - will retry on next interval
-          }
-          return { shiftId: frontendShift.id, employeeIds: [] };
-        });
-
-        const shiftResults = await Promise.all(shiftAvailabilityPromises);
-        const newShiftMap = new Map<string, number[]>();
-        shiftResults.forEach(result => {
-          newShiftMap.set(result.shiftId, result.employeeIds);
-        });
-        setShiftAvailabilityMap(newShiftMap);
-
-        // Fetch availability count for each employee using their real backend IDs
-        const employeeAvailabilityPromises = employees.map(async (frontendEmp) => {
-          try {
-            const backendEmpId = parseInt(frontendEmp.id); // Frontend employee ID is the backend EmployeeId
-            const response = await fetch(`/api/availabilities/for-employee/${backendEmpId}`, {
-              credentials: 'include',
-              cache: 'no-cache'
-            });
-            if (response.ok) {
-              const data = await response.json();
-              return { employeeId: frontendEmp.id, count: data.length || 0 };
-            }
-          } catch (err) {
-            // Silently fail - will retry on next interval
-          }
-          return { employeeId: frontendEmp.id, count: 0 };
-        });
-
-        const employeeResults = await Promise.all(employeeAvailabilityPromises);
-        const newEmployeeMap = new Map<string, number>();
-        employeeResults.forEach(result => {
-          newEmployeeMap.set(result.employeeId, result.count);
-        });
-        setEmployeeAvailabilityCount(newEmployeeMap);
-      } catch (err) {
-        // Silently fail - will retry on next interval
-      }
-    };
-
     // Initial fetch
     fetchAvailability();
-    // Refresh every 15 seconds to catch employee availability updates (reduced from 3s to reduce spam)
-    availabilityIntervalRef.current = setInterval(fetchAvailability, 15000);
+    // Refresh every 5 seconds to catch employee availability updates quickly
+    availabilityIntervalRef.current = setInterval(() => fetchAvailability(), 5000);
     
     return () => {
       if (availabilityIntervalRef.current) {
@@ -629,6 +710,37 @@ const App: React.FC = () => {
     const analysis = generateFastPerformanceReport(shifts, employees);
     setAiAnalysis(analysis);
     setIsAnalyzing(false);
+  };
+
+  // Share schedule with workers: mark this week as published so workers can see their shifts
+  const [sharingSchedule, setSharingSchedule] = useState(false);
+  const handleShareScheduleWithWorkers = async () => {
+    if (!user?.storeId) return;
+    setSharingSchedule(true);
+    try {
+      const today = new Date();
+      const day = today.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      const monday = new Date(today);
+      monday.setDate(today.getDate() + diff);
+      monday.setHours(0, 0, 0, 0);
+      const weekStartParam = encodeURIComponent(monday.toISOString());
+      const response = await fetch(
+        `/api/schedule/publish?storeId=${user.storeId}&weekStart=${weekStartParam}`,
+        { method: 'POST', credentials: 'include' }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        alert(data.message || '✅ Schedule shared successfully! All workers can now see their individual schedules on their worker page (Schedule tab).');
+      } else {
+        const err = await response.json().catch(() => ({}));
+        alert(err.message || err.error || 'Failed to share schedule. Try again.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to share schedule.');
+    } finally {
+      setSharingSchedule(false);
+    }
   };
 
   const generateFastPerformanceReport = (shifts: Shift[], employees: Employee[]): string => {
@@ -1085,6 +1197,15 @@ const App: React.FC = () => {
                     <i className={`fas ${isAnalyzing ? 'fa-spinner fa-spin' : 'fa-chart-line'}`}></i>
                     <span className="hidden sm:inline ml-2">Report</span>
                 </button>
+                <button 
+                    onClick={handleShareScheduleWithWorkers}
+                    disabled={sharingSchedule}
+                    className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg disabled:opacity-50 transform hover:scale-105 active:scale-95"
+                    title="Share schedule with workers so they can see their shifts"
+                >
+                    <i className={`fas ${sharingSchedule ? 'fa-spinner fa-spin' : 'fa-share-alt'}`}></i>
+                    <span className="hidden sm:inline ml-2">Share with workers</span>
+                </button>
               </div>
             )}
 
@@ -1242,6 +1363,7 @@ const App: React.FC = () => {
           employees={employees} 
           onDragStart={handleDragStart}
           employeeAvailabilityCount={employeeAvailabilityCount}
+          employeeAvailabilityMap={employeeAvailabilityMap}
           loading={loadingEmployees}
         />
       </main>
@@ -1304,9 +1426,25 @@ const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, assignedEmployee, onDrop, 
         );
     }
 
-        const availableEmployees = allEmployees.filter(emp =>
-            availableEmployeeIds.some((id: number | string) => Number(id) === Number(emp.id))
-        );
+        // Filter available employees - ensure ID matching works correctly
+        const availableEmployees = allEmployees.filter(emp => {
+          const empIdNum = Number(emp.id);
+          const isAvailable = availableEmployeeIds.some((id: number | string) => {
+            const idNum = Number(id);
+            return !isNaN(empIdNum) && !isNaN(idNum) && empIdNum === idNum;
+          });
+          return isAvailable;
+        });
+        
+        // Debug logging
+        if (availableEmployeeIds.length > 0 && availableEmployees.length === 0) {
+          console.warn(`Manager: ShiftSlot - Available IDs don't match employees`, {
+            shiftId: shift.id,
+            availableEmployeeIds,
+            allEmployeeIds: allEmployees.map(e => Number(e.id)),
+            employeeNames: allEmployees.map(e => `${e.name} (ID:${e.id})`)
+          });
+        }
 
         return (
         <div 

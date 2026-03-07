@@ -6,10 +6,11 @@ interface EmployeeSidebarProps {
   employees: Employee[];
   onDragStart: (e: React.DragEvent, employeeId: string) => void;
   employeeAvailabilityCount?: Map<string, number>;
+  employeeAvailabilityMap?: Map<string, Record<string, boolean>>; // employeeId -> availabilityMap (slot 1-14 -> boolean)
   loading?: boolean;
 }
 
-const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ employees, onDragStart, employeeAvailabilityCount, loading = false }) => {
+const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ employees, onDragStart, employeeAvailabilityCount, employeeAvailabilityMap, loading = false }) => {
   return (
     <div className="w-full lg:w-96 flex-shrink-0">
       <div className="bg-white/80 backdrop-blur-2xl rounded-3xl shadow-xl shadow-rose-500/10 border border-rose-200/50 p-8 sticky top-24">
@@ -67,33 +68,90 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ employees, onDragStar
                       <div className="text-[9px] text-slate-500 font-bold uppercase mt-1">יעילות</div>
                     </div>
                   </div>
-                  <div className="mt-4 pt-4 border-t border-rose-200 flex items-center justify-between">
-                    <div className="flex items-center text-[11px] font-bold text-slate-500">
-                        <i className="fas fa-dollar-sign mr-1"></i>
-                        <span>{emp.hourlyRate}/שעה</span>
+                  <div className="mt-4 pt-4 border-t border-rose-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center text-[11px] font-bold text-slate-500">
+                          <i className="fas fa-dollar-sign mr-1"></i>
+                          <span>{emp.hourlyRate}/שעה</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                          {employeeAvailabilityCount && employeeAvailabilityCount.get(emp.id) !== undefined && (
+                              <span 
+                                  className={`text-[10px] font-bold px-2 py-1 rounded-full transition-all ${
+                                      (employeeAvailabilityCount.get(emp.id) || 0) > 0
+                                          ? 'bg-green-100 text-green-700 border border-green-300 shadow-sm'
+                                          : 'bg-slate-100 text-slate-500'
+                                  }`}
+                                  title={`Available for ${employeeAvailabilityCount.get(emp.id) || 0} shift(s)`}
+                              >
+                                  <i className={`fas ${(employeeAvailabilityCount.get(emp.id) || 0) > 0 ? 'fa-check-circle' : 'fa-calendar-times'} mr-1`}></i>
+                                  {employeeAvailabilityCount.get(emp.id) || 0} shifts
+                              </span>
+                          )}
+                      </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                        {employeeAvailabilityCount && employeeAvailabilityCount.get(emp.id) !== undefined && (
-                            <span 
-                                className={`text-[10px] font-bold px-2 py-1 rounded-full transition-all ${
-                                    (employeeAvailabilityCount.get(emp.id) || 0) > 0
-                                        ? 'bg-green-100 text-green-700 border border-green-300 shadow-sm'
-                                        : 'bg-slate-100 text-slate-500'
-                                }`}
-                                title={`Available for ${employeeAvailabilityCount.get(emp.id) || 0} shift(s)`}
-                            >
-                                <i className={`fas ${(employeeAvailabilityCount.get(emp.id) || 0) > 0 ? 'fa-check-circle' : 'fa-calendar-times'} mr-1`}></i>
-                                {employeeAvailabilityCount.get(emp.id) || 0} shifts
-                            </span>
-                        )}
-                    <div className="flex -space-x-1">
-                        {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, i) => (
-                            <div key={i} className="w-5 h-5 rounded-md flex items-center justify-center text-[8px] font-black border border-rose-200 bg-rose-50 text-slate-400">
-                                {day}
-                            </div>
-                        ))}
+                    {/* Display specific available shifts */}
+                    {employeeAvailabilityMap && (() => {
+                      const availabilityMap = employeeAvailabilityMap.get(emp.id) || {};
+                      console.log(`EmployeeSidebar: Rendering availability for ${emp.name} (ID: ${emp.id})`);
+                      console.log(`EmployeeSidebar: Availability map:`, availabilityMap);
+                      console.log(`EmployeeSidebar: Map has entry:`, employeeAvailabilityMap.has(emp.id));
+                      
+                      const availableShifts: Array<{day: string, time: string, dayAbbrev: string, shortLabel: string}> = [];
+                      const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+                      const dayAbbrevs = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                      
+                      // Slot mapping: 1=Mon AM, 2=Mon PM, 3=Tue AM, 4=Tue PM, ..., 14=Sun PM
+                      for (let slot = 1; slot <= 14; slot++) {
+                        const slotKey = String(slot);
+                        // Also check numeric key in case it's stored as number
+                        const isAvailable = availabilityMap[slotKey] === true || availabilityMap[slot] === true;
+                        
+                        if (isAvailable) {
+                          const dayIndex = Math.floor((slot - 1) / 2);
+                          const isMorning = (slot - 1) % 2 === 0;
+                          const dayName = dayNames[dayIndex] || '';
+                          const dayAbbrev = dayAbbrevs[dayIndex] || '';
+                          const timeLabel = isMorning ? 'Morning (09-15)' : 'Afternoon (15-21)';
+                          const shortLabel = isMorning ? 'AM' : 'PM';
+                          availableShifts.push({
+                            day: dayName,
+                            time: timeLabel,
+                            dayAbbrev: dayAbbrev,
+                            shortLabel: shortLabel
+                          });
+                        }
+                      }
+                      
+                      console.log(`EmployeeSidebar: ${emp.name} - Found ${availableShifts.length} available shifts`);
+                      
+                      return availableShifts.length > 0 ? (
+                        <div className="mt-3 pt-3 border-t border-rose-200/50">
+                          <div className="flex items-center mb-2">
+                            <i className="fas fa-calendar-check text-green-500 text-[10px] mr-1.5"></i>
+                            <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Available Shifts ({availableShifts.length}):</p>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {availableShifts.map((shift, idx) => (
+                              <span 
+                                key={idx}
+                                className="px-2 py-1 rounded-md text-[9px] font-bold bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border border-green-300 shadow-sm hover:shadow-md transition-shadow"
+                                title={`Available for ${shift.day} ${shift.time}`}
+                              >
+                                <span className="font-black">{shift.dayAbbrev}</span> <span className="text-green-600">{shift.shortLabel}</span>
+                              </span>
+                            ))}
+                          </div>
                         </div>
-                    </div>
+                      ) : (
+                        <div className="mt-3 pt-3 border-t border-rose-200/50">
+                          <p className="text-[9px] text-slate-400 italic flex items-center">
+                            <i className="fas fa-info-circle mr-1"></i>
+                            No availability set - worker needs to set availability first
+                          </p>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
              );

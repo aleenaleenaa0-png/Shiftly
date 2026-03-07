@@ -373,6 +373,139 @@ namespace Backend.Controllers
             }
         }
 
+        /// <summary>
+        /// GET: api/Shifts/my-shifts - Returns only the shifts assigned to the currently logged-in employee (for worker schedule page).
+        /// Uses server week (Monday start) so workers always see the same week as the manager.
+        /// </summary>
+        [HttpGet("my-shifts")]
+        [Authorize]
+        public async Task<ActionResult<IEnumerable<object>>> GetMyShifts()
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int employeeId))
+                    return Unauthorized(new { error = "Not authenticated" });
+                // Allow both Role and UserType so workers are always recognized
+                var isEmployee = User.IsInRole("Employee") || User.FindFirst("UserType")?.Value == "Employee";
+                if (!isEmployee)
+                    return BadRequest(new { error = "This endpoint is for workers only" });
+
+                var employee = await _db.Employees.FindAsync(employeeId);
+                if (employee == null)
+                    return NotFound(new { error = "Employee not found" });
+
+                return await GetShiftsForEmployeeInternal(employeeId, employee.StoreId, null);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to retrieve your shifts", message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// GET: api/Shifts/for-employee - Returns ALL shifts assigned to this employee in this store (no week filter).
+        /// Frontend filters to current week. Guarantees worker sees their assignments.
+        /// Requires authentication: Employees can only see their own shifts, Managers can see shifts for employees in their store.
+        /// </summary>
+        [HttpGet("for-employee")]
+        [Authorize]
+        public async Task<ActionResult<IEnumerable<object>>> GetShiftsForEmployee(
+            [FromQuery] int employeeId,
+            [FromQuery] int storeId)
+        {
+            if (employeeId <= 0 || storeId <= 0)
+                return BadRequest(new { error = "employeeId and storeId are required" });
+
+            // Get authenticated user's ID and role
+            var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int authenticatedUserId))
+                return Unauthorized(new { error = "Not authenticated" });
+
+            var isManager = User.IsInRole("Manager") || User.FindFirst("UserType")?.Value == "Manager";
+            var isEmployee = User.IsInRole("Employee") || User.FindFirst("UserType")?.Value == "Employee";
+
+            // Validate employee exists
+            var employee = await _db.Employees.FindAsync(employeeId);
+            if (employee == null)
+                return NotFound(new { error = "Employee not found" });
+            if (employee.StoreId != storeId)
+                return BadRequest(new { error = "Store does not match employee" });
+
+            // Authorization: Employees can only see their own shifts, Managers can see any employee in their store
+            if (isEmployee && !isManager)
+            {
+                // Employee trying to access - must be their own shifts
+                if (authenticatedUserId != employeeId)
+                    return Forbid("You can only view your own shifts");
+            }
+            else if (isManager)
+            {
+                // Manager accessing - verify they manage this store
+                // Managers are stored in Users table, not Employees table
+                var managerUser = await _db.Users.FindAsync(authenticatedUserId);
+                if (managerUser == null)
+                    return Forbid("Manager account not found");
+                if (managerUser.StoreId != storeId)
+                {
+                    // Manager doesn't manage this store
+                    return Forbid("You can only view shifts for employees in your store");
+                }
+            }
+            else
+            {
+                // Not a recognized role
+                return Forbid("Access denied");
+            }
+
+            var shifts = await _db.Shifts
+                .Where(s => s.StoreId == storeId && s.EmployeeId == employeeId)
+                .OrderBy(s => s.StartTime)
+                .Select(s => new
+                {
+                    s.ShiftId,
+                    SlotNumber = s.SlotNumber ?? 0,
+                    s.StoreId,
+                    s.StartTime,
+                    s.EndTime,
+                    s.RequiredProductivity,
+                    EmployeeId = s.EmployeeId
+                })
+                .ToListAsync();
+
+            return Ok(shifts);
+        }
+
+        private async Task<ActionResult<IEnumerable<object>>> GetShiftsForEmployeeInternal(int employeeId, int storeId, DateTime? weekStart = null)
+        {
+            DateTime weekStartDate;
+            if (weekStart.HasValue)
+                weekStartDate = weekStart.Value.Date;
+            else
+            {
+                var today = DateTime.Today;
+                var dayOfWeek = (int)today.DayOfWeek;
+                weekStartDate = today.AddDays(dayOfWeek == 0 ? -6 : 1 - dayOfWeek).Date;
+            }
+            var weekEnd = weekStartDate.AddDays(7);
+            var shifts = await _db.Shifts
+                .Where(s => s.StoreId == storeId && s.EmployeeId == employeeId &&
+                           s.StartTime >= weekStartDate && s.StartTime < weekEnd)
+                .OrderBy(s => s.SlotNumber ?? 0)
+                .Select(s => new
+                {
+                    s.ShiftId,
+                    SlotNumber = s.SlotNumber ?? 0,
+                    s.StoreId,
+                    s.StartTime,
+                    s.EndTime,
+                    s.RequiredProductivity,
+                    EmployeeId = s.EmployeeId
+                })
+                .ToListAsync();
+            return Ok(shifts);
+        }
+
         // GET: api/Shifts/5
         [HttpGet("{id}")]
         public async Task<ActionResult<object>> GetShift(int id)

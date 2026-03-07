@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { DAYS } from '../constants';
 
 interface BackendEmployee {
   employeeId: number;
@@ -10,6 +11,7 @@ interface BackendEmployee {
   storeName?: string;
   fullName?: string;
   availabilityCount?: number; // Number of shifts they're available for
+  availabilityMap?: Record<string, boolean>; // Map of slot numbers (1-14) to availability
 }
 
 interface Store {
@@ -80,25 +82,35 @@ const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ user }) => {
         fullName: emp.FullName ?? emp.fullName ?? (emp.FirstName ?? emp.firstName ?? '')
       }));
       
-      // Fetch availability count for each employee
+      // Fetch availability details for each employee (using all-for-employee to get slot-based availability)
       const employeesWithAvailability = await Promise.all(
         mappedEmployees.map(async (emp: BackendEmployee) => {
           try {
-            const availResponse = await fetch(`/api/availabilities/for-employee/${emp.employeeId}`, {
+            const availResponse = await fetch(`/api/availabilities/all-for-employee/${emp.employeeId}`, {
               credentials: 'include'
             });
             if (availResponse.ok) {
               const availData = await availResponse.json();
-              return { ...emp, availabilityCount: availData.length || 0 };
+              const availabilityMap = availData.availabilityMap || {};
+              // Count available shifts (where value is true)
+              const count = Object.values(availabilityMap).filter((v: any) => v === true).length;
+              return { ...emp, availabilityCount: count, availabilityMap };
             }
           } catch (err) {
             console.warn(`Failed to fetch availability for employee ${emp.employeeId}:`, err);
           }
-          return { ...emp, availabilityCount: 0 };
+          return { ...emp, availabilityCount: 0, availabilityMap: {} };
         })
       );
       
-      setEmployees(employeesWithAvailability);
+      // Filter out "wow", "test", and "root" users (case-insensitive)
+      const filteredEmployees = employeesWithAvailability.filter(emp => {
+        const firstName = (emp.firstName || emp.fullName || '').trim().toLowerCase();
+        const excludedNames = ['wow', 'test', 'root'];
+        return !excludedNames.includes(firstName);
+      });
+      
+      setEmployees(filteredEmployees);
       setError(null);
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to load employees';
@@ -453,15 +465,52 @@ const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ user }) => {
                           </span>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex items-center space-x-2">
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                              (employee.availabilityCount || 0) > 0 
-                                ? 'bg-green-100 text-green-700' 
-                                : 'bg-slate-100 text-slate-500'
-                            }`}>
-                              <i className="fas fa-calendar-check mr-1"></i>
-                              {employee.availabilityCount || 0} shifts
-                            </span>
+                          <div className="flex flex-col space-y-1">
+                            {(employee.availabilityCount || 0) > 0 ? (
+                              <>
+                                <div className="flex items-center space-x-2 mb-1">
+                                  <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">
+                                    <i className="fas fa-calendar-check mr-1"></i>
+                                    {employee.availabilityCount || 0} shifts
+                                  </span>
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                  {(() => {
+                                    const availableShifts: string[] = [];
+                                    const availabilityMap = employee.availabilityMap || {};
+                                    const dayAbbrevs = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                                    
+                                    for (let slot = 1; slot <= 14; slot++) {
+                                      const slotKey = String(slot);
+                                      if (availabilityMap[slotKey] === true) {
+                                        const dayIndex = Math.floor((slot - 1) / 2);
+                                        const isMorning = (slot - 1) % 2 === 0;
+                                        const dayAbbrev = dayAbbrevs[dayIndex] || '';
+                                        const timeLabel = isMorning ? 'AM' : 'PM';
+                                        availableShifts.push(`${dayAbbrev} ${timeLabel}`);
+                                      }
+                                    }
+                                    
+                                    return availableShifts.length > 0 ? (
+                                      availableShifts.map((shift, idx) => (
+                                        <span 
+                                          key={idx}
+                                          className="px-2 py-0.5 rounded text-[10px] font-semibold bg-green-50 text-green-600 border border-green-200"
+                                          title={`Available for ${shift} shift`}
+                                        >
+                                          {shift}
+                                        </span>
+                                      ))
+                                    ) : null;
+                                  })()}
+                                </div>
+                              </>
+                            ) : (
+                              <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-500">
+                                <i className="fas fa-calendar-times mr-1"></i>
+                                No availability set
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="px-6 py-4 text-right">

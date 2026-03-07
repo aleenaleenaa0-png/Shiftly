@@ -26,51 +26,77 @@ const WorkerPortal: React.FC<WorkerPortalProps> = ({ user, onLogout }) => {
     openShifts: '0'
   });
 
-  // Fetch worker stats
+  // Helper function to get current week start (Monday)
+  const getCurrentWeekStart = () => {
+    const today = new Date();
+    const day = today.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() + diff);
+    monday.setHours(0, 0, 0, 0);
+    return monday;
+  };
+
+  // Fetch worker stats from same endpoint as schedule (for-employee)
+  // Filter to current week before calculating to show weekly stats, not lifetime totals
+  // Check for week changes periodically
   useEffect(() => {
     const fetchStats = async () => {
+      if (!user.userId || !user.storeId) return;
       try {
-        // Fetch shifts to calculate stats
-        const today = new Date();
-          const day = today.getDay();
-          const diff = day === 0 ? -6 : 1 - day;
-          const monday = new Date(today);
-          monday.setDate(today.getDate() + diff);
-          monday.setHours(0, 0, 0, 0);
-          const shiftsResponse = await fetch(`/api/shifts?storeId=${user.storeId}&weekStart=${monday.toISOString()}`, {
-            credentials: 'include'
-          });
-        
+        const shiftsResponse = await fetch(
+          `/api/shifts/for-employee?employeeId=${user.userId}&storeId=${user.storeId}`,
+          { credentials: 'include', cache: 'no-cache' }
+        );
         if (shiftsResponse.ok) {
           const shifts = await shiftsResponse.json();
-          const userShifts = shifts.filter((s: any) => 
-            (s.assignedEmployeeId === user.userId || s.AssignedEmployeeId === user.userId)
-          );
+          const arr = Array.isArray(shifts) ? shifts : [];
           
-          // Calculate scheduled hours
-          const totalHours = userShifts.reduce((acc: number, shift: any) => {
-            const start = parseInt((shift.startTime || shift.StartTime || '09:00').split(':')[0]);
-            const end = parseInt((shift.endTime || shift.EndTime || '17:00').split(':')[0]);
-            return acc + (end - start);
-          }, 0);
-
-          // Estimate pay (assuming $25/hour average - should come from employee data)
-          const estimatedPay = totalHours * 25;
-
+          // Calculate current week boundaries (Monday to Sunday)
+          const weekMonday = getCurrentWeekStart();
+          const weekEnd = new Date(weekMonday);
+          weekEnd.setDate(weekMonday.getDate() + 7);
+          
+          // Filter shifts to current week only
+          const currentWeekShifts = arr.filter((shift: any) => {
+            const start = shift.StartTime ?? shift.startTime;
+            if (start == null) return false;
+            const startDate = typeof start === 'string' ? new Date(start) : start;
+            return startDate >= weekMonday && startDate < weekEnd;
+          });
+          
+          // Calculate hours only for current week shifts
+          let totalHours = 0;
+          for (const shift of currentWeekShifts) {
+            const start = shift.StartTime ?? shift.startTime;
+            const end = shift.EndTime ?? shift.endTime;
+            if (start != null && end != null) {
+              const startDate = typeof start === 'string' ? new Date(start) : start;
+              const endDate = typeof end === 'string' ? new Date(end) : end;
+              totalHours += (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60);
+            }
+          }
+          const estimatedPay = Math.round(totalHours * 25);
           setStats({
             paydayEst: `$${estimatedPay.toLocaleString()}`,
-            scheduledHours: `${totalHours}h`,
-            shiftAccuracy: '98%', // This could be calculated from attendance data
-            openShifts: '0' // Could fetch open shifts
+            scheduledHours: `${totalHours.toFixed(1)}h`,
+            shiftAccuracy: '98%',
+            openShifts: '0'
           });
         }
       } catch (err) {
         console.error('Error fetching stats:', err);
       }
     };
-
+    
+    // Initial fetch
     fetchStats();
-  }, [user.userId]);
+    
+    // Check for week changes every hour to update when crossing Sunday/Monday boundary
+    const interval = setInterval(fetchStats, 60 * 60 * 1000); // Check every hour
+    
+    return () => clearInterval(interval);
+  }, [user.userId, user.storeId]); // Only depend on userId and storeId - interval handles week changes
 
   return (
     <div className="min-h-screen pb-12" style={{

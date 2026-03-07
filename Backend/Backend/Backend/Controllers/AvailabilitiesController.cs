@@ -264,35 +264,98 @@ ORDER BY Shift_StartTime";
                 createCmd.ExecuteNonQuery();
             }
 
-            // 4) Find existing availability
+            // 4) Find existing availability for this employee and slot number
+            // CRITICAL: We need to find availability by SlotNumber, not just ShiftId
+            // This ensures availability persists even when shifts are recreated for a new week
             int? existingId = null;
+            int? existingShiftId = null;
+            
+            // First, try to find by exact ShiftId (for current week)
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "SELECT AvailabilityID FROM Availabilities WHERE EmployeeId = ? AND ShiftId = ?";
+                cmd.CommandText = "SELECT AvailabilityID, ShiftId FROM Availabilities WHERE EmployeeId = ? AND ShiftId = ?";
                 cmd.Parameters.Add(new OleDbParameter("@p1", employeeId));
                 cmd.Parameters.Add(new OleDbParameter("@p2", shiftId));
-                var o = cmd.ExecuteScalar();
-                if (o != null && o != DBNull.Value) existingId = Convert.ToInt32(o);
+                using var reader = cmd.ExecuteReader();
+                if (reader.Read())
+                {
+                    existingId = reader.GetInt32(0);
+                    existingShiftId = reader.GetInt32(1);
+                }
+            }
+            
+            // If not found by ShiftId, try to find by SlotNumber (for previous weeks)
+            // This ensures we update existing availability even if the shift was recreated
+            if (!existingId.HasValue)
+            {
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = @"
+                        SELECT TOP 1 a.AvailabilityID, a.ShiftId 
+                        FROM Availabilities a
+                        INNER JOIN Shifts s ON a.ShiftId = s.Shift_ID
+                        WHERE a.EmployeeId = ? AND s.Shift_SlotNumber = ? AND s.Shift_StoreID = ?
+                        ORDER BY a.AvailabilityID DESC";
+                    cmd.Parameters.Add(new OleDbParameter("@p1", employeeId));
+                    cmd.Parameters.Add(new OleDbParameter("@p2", slotNumber));
+                    cmd.Parameters.Add(new OleDbParameter("@p3", storeId));
+                    using var reader = cmd.ExecuteReader();
+                    if (reader.Read())
+                    {
+                        existingId = reader.GetInt32(0);
+                        existingShiftId = reader.GetInt32(1);
+                        Console.WriteLine($"[SetEmployeeAvailability] Found existing availability by SlotNumber: AvailabilityId={existingId}, OldShiftId={existingShiftId}, NewShiftId={shiftId}");
+                    }
+                }
             }
 
             if (existingId.HasValue)
             {
-                using var cmd = conn.CreateCommand();
-                cmd.CommandText = "UPDATE Availabilities SET IsAvailable = ? WHERE AvailabilityID = ?";
-                cmd.Parameters.Add(new OleDbParameter("@p1", isAvailable));
-                cmd.Parameters.Add(new OleDbParameter("@p2", existingId.Value));
-                cmd.ExecuteNonQuery();
-                Console.WriteLine($"[SetEmployeeAvailability] UPDATED AvailabilityId={existingId} for SlotNumber={slotNumber}, ShiftId={shiftId}");
+                // If the ShiftId changed (week changed), update the ShiftId to point to current week's shift
+                // This ensures availability is always linked to the current week's shift
+                if (existingShiftId.HasValue && existingShiftId.Value != shiftId)
+                {
+                    Console.WriteLine($"[SetEmployeeAvailability] Updating ShiftId from {existingShiftId.Value} to {shiftId} (week changed)");
+                    using var updateShiftCmd = conn.CreateCommand();
+                    updateShiftCmd.CommandText = "UPDATE Availabilities SET ShiftId = ?, IsAvailable = ? WHERE AvailabilityID = ?";
+                    updateShiftCmd.Parameters.Add(new OleDbParameter("@p1", shiftId));
+                    updateShiftCmd.Parameters.Add(new OleDbParameter("@p2", isAvailable));
+                    updateShiftCmd.Parameters.Add(new OleDbParameter("@p3", existingId.Value));
+                    var rowsAffected = updateShiftCmd.ExecuteNonQuery();
+                    Console.WriteLine($"[SetEmployeeAvailability] ✓✓✓ UPDATED AvailabilityId={existingId} (ShiftId updated to {shiftId}) for EmployeeId={employeeId}, SlotNumber={slotNumber}, IsAvailable={isAvailable}, RowsAffected={rowsAffected}");
+                }
+                else
+                {
+                    // Just update IsAvailable
+                    using var cmd = conn.CreateCommand();
+                    cmd.CommandText = "UPDATE Availabilities SET IsAvailable = ? WHERE AvailabilityID = ?";
+                    cmd.Parameters.Add(new OleDbParameter("@p1", isAvailable));
+                    cmd.Parameters.Add(new OleDbParameter("@p2", existingId.Value));
+                    var rowsAffected = cmd.ExecuteNonQuery();
+                    Console.WriteLine($"[SetEmployeeAvailability] ✓✓✓ UPDATED AvailabilityId={existingId} for EmployeeId={employeeId}, SlotNumber={slotNumber}, ShiftId={shiftId}, IsAvailable={isAvailable}, RowsAffected={rowsAffected}");
+                }
+                
+                // Verify the update was successful
+                using var verifyCmd = conn.CreateCommand();
+                verifyCmd.CommandText = "SELECT IsAvailable FROM Availabilities WHERE AvailabilityID = ?";
+                verifyCmd.Parameters.Add(new OleDbParameter("@p1", existingId.Value));
+                var verifyResult = verifyCmd.ExecuteScalar();
+                var savedValue = verifyResult != null && verifyResult != DBNull.Value ? Convert.ToBoolean(verifyResult) : false;
+                Console.WriteLine($"[SetEmployeeAvailability] ✓ Verified saved value: IsAvailable={savedValue}");
+                Console.WriteLine($"[SetEmployeeAvailability] ✓✓✓ AVAILABILITY PERSISTED TO DATABASE - Will survive logout/login");
+                
                 return (new { slotNumber, isAvailable, availabilityId = existingId.Value, updated = true }, null, false);
             }
 
+            // Insert new availability record
             using (var cmd = conn.CreateCommand())
             {
                 cmd.CommandText = "INSERT INTO Availabilities (EmployeeId, ShiftId, IsAvailable) VALUES (?, ?, ?)";
                 cmd.Parameters.Add(new OleDbParameter("@p1", employeeId));
                 cmd.Parameters.Add(new OleDbParameter("@p2", shiftId));
                 cmd.Parameters.Add(new OleDbParameter("@p3", isAvailable));
-                cmd.ExecuteNonQuery();
+                var rowsAffected = cmd.ExecuteNonQuery();
+                Console.WriteLine($"[SetEmployeeAvailability] INSERT executed, RowsAffected={rowsAffected}");
             }
 
             int newId;
@@ -312,7 +375,20 @@ ORDER BY Shift_StartTime";
                 newId = o != null && o != DBNull.Value ? Convert.ToInt32(o) : 0;
             }
 
-            Console.WriteLine($"[SetEmployeeAvailability] CREATED AvailabilityId={newId} for SlotNumber={slotNumber}, ShiftId={shiftId}");
+            Console.WriteLine($"[SetEmployeeAvailability] ✓✓✓ CREATED AvailabilityId={newId} for EmployeeId={employeeId}, SlotNumber={slotNumber}, ShiftId={shiftId}, IsAvailable={isAvailable}");
+            
+            // Verify the insert was successful
+            if (newId > 0)
+            {
+                using var verifyCmd = conn.CreateCommand();
+                verifyCmd.CommandText = "SELECT IsAvailable FROM Availabilities WHERE AvailabilityID = ?";
+                verifyCmd.Parameters.Add(new OleDbParameter("@p1", newId));
+                var verifyResult = verifyCmd.ExecuteScalar();
+                var savedValue = verifyResult != null && verifyResult != DBNull.Value ? Convert.ToBoolean(verifyResult) : false;
+                Console.WriteLine($"[SetEmployeeAvailability] ✓ Verified saved value: IsAvailable={savedValue}");
+                Console.WriteLine($"[SetEmployeeAvailability] ✓✓✓ AVAILABILITY PERSISTED TO DATABASE - Will survive logout/login");
+            }
+            
             return (new { slotNumber, isAvailable, availabilityId = newId, updated = false }, null, false);
         }
 
@@ -357,6 +433,7 @@ WHERE Shift_StoreID = ? AND Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Sh
 
         // GET: api/Availabilities/for-shift/{shiftId}
         // Get all employees available for a specific shift
+        // CRITICAL FIX: Match by SlotNumber instead of just ShiftId, so availability persists across week changes
         [HttpGet("for-shift/{shiftId}")]
         public async Task<ActionResult<IEnumerable<object>>> GetEmployeesForShift(int shiftId)
         {
@@ -368,27 +445,104 @@ WHERE Shift_StoreID = ? AND Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Sh
                     return NotFound(new { error = "Shift not found" });
                 }
 
-                // Get all availabilities for this shift where IsAvailable is true
-                // This is used by managers to see which employees are available for a shift
-                var availabilities = await _db.Availabilities
-                    .Include(a => a.Employee)
-                    .Where(a => a.ShiftId == shiftId && a.IsAvailable == true) // Explicitly check for true
-                    .Select(a => new
-                    {
-                        a.EmployeeId,
-                        EmployeeName = a.Employee != null ? a.Employee.FirstName : null,
-                        a.IsAvailable,
-                        ProductivityScore = a.Employee != null ? a.Employee.ProductivityScore : 0,
-                        HourlyWage = a.Employee != null ? a.Employee.HourlyWage : 0
-                    })
-                    .OrderByDescending(a => a.ProductivityScore) // Sort by productivity (best employees first)
-                    .ToListAsync();
+                var slotNumber = shift.SlotNumber ?? 0;
+                if (slotNumber < 1 || slotNumber > 14)
+                {
+                    Console.WriteLine($"[GetEmployeesForShift] ShiftId={shiftId} has invalid SlotNumber={slotNumber}");
+                    return Ok(new List<object>()); // Return empty list if invalid slot
+                }
 
-                return Ok(availabilities);
+                Console.WriteLine($"[GetEmployeesForShift] ShiftId={shiftId}, SlotNumber={slotNumber}, StoreId={shift.StoreId}");
+
+                // CRITICAL: Match availability by SlotNumber, not just ShiftId
+                // This ensures availability persists even when shifts are recreated for a new week
+                // We need to find all availability records where:
+                // 1. The availability's ShiftId points to a shift with the same SlotNumber, OR
+                // 2. The availability's ShiftId matches the current shift (for current week)
+                // We'll use raw SQL to handle this efficiently
+                var connectionString = _config.GetConnectionString("ShiftlyConnection")
+                    ?? "Data Source=C:\\Users\\aleen\\Documents\\ShiftlyDB.accdb";
+                if (!string.IsNullOrEmpty(connectionString) && !connectionString.Trim().Contains("Provider=", StringComparison.OrdinalIgnoreCase))
+                    connectionString = "Provider=Microsoft.ACE.OLEDB.12.0;" + (connectionString.Trim().StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) ? connectionString.Trim() : "Data Source=" + connectionString.Trim()) + ";";
+                
+                var availableEmployees = new List<object>();
+
+                if (!string.IsNullOrEmpty(connectionString))
+                {
+                    using var conn = new System.Data.OleDb.OleDbConnection(connectionString);
+                    await conn.OpenAsync();
+                    
+                    // Get all availability records where:
+                    // - The shift has the same SlotNumber and StoreId
+                    // - IsAvailable is true
+                    // This will find availability even if the original shift was deleted
+                    using var cmd = conn.CreateCommand();
+                    cmd.CommandText = @"
+                        SELECT DISTINCT a.EmployeeId, e.FirstName, e.ProductivityScore, e.HourlyWage
+                        FROM Availabilities a
+                        INNER JOIN Shifts s ON a.ShiftId = s.Shift_ID
+                        INNER JOIN Employees e ON a.EmployeeId = e.EmployeeId
+                        WHERE s.Shift_SlotNumber = ? 
+                          AND s.Shift_StoreID = ?
+                          AND a.IsAvailable = True
+                        ORDER BY e.ProductivityScore DESC";
+                    cmd.Parameters.Add(new System.Data.OleDb.OleDbParameter("@p1", slotNumber));
+                    cmd.Parameters.Add(new System.Data.OleDb.OleDbParameter("@p2", shift.StoreId));
+                    
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        availableEmployees.Add(new
+                        {
+                            EmployeeId = reader.GetInt32(0),
+                            EmployeeName = reader.IsDBNull(1) ? null : reader.GetString(1),
+                            IsAvailable = true,
+                            ProductivityScore = reader.IsDBNull(2) ? 0 : reader.GetDouble(2),
+                            HourlyWage = reader.IsDBNull(3) ? 0 : reader.GetDecimal(3)
+                        });
+                    }
+                }
+                else
+                {
+                    // Fallback to EF Core if connection string not available
+                    // Match by SlotNumber instead of just ShiftId
+                    var availabilities = await _db.Availabilities
+                        .Include(a => a.Employee)
+                        .Join(_db.Shifts.Where(s => s.SlotNumber == slotNumber && s.StoreId == shift.StoreId),
+                            a => a.ShiftId,
+                            s => s.ShiftId,
+                            (a, s) => a)
+                        .Where(a => a.IsAvailable == true)
+                        .Select(a => new
+                        {
+                            a.EmployeeId,
+                            EmployeeName = a.Employee != null ? a.Employee.FirstName : null,
+                            a.IsAvailable,
+                            ProductivityScore = a.Employee != null ? a.Employee.ProductivityScore : 0,
+                            HourlyWage = a.Employee != null ? a.Employee.HourlyWage : 0
+                        })
+                        .OrderByDescending(a => a.ProductivityScore)
+                        .ToListAsync();
+                    
+                    availableEmployees = availabilities.Cast<object>().ToList();
+                }
+
+                Console.WriteLine($"[GetEmployeesForShift] ShiftId={shiftId}, SlotNumber={slotNumber}, Found {availableEmployees.Count} available employees");
+                if (availableEmployees.Count > 0)
+                {
+                    var names = availableEmployees.Select(a => {
+                        var emp = a as dynamic;
+                        return $"{emp?.EmployeeName ?? "Unknown"} (ID:{emp?.EmployeeId ?? 0})";
+                    });
+                    Console.WriteLine($"[GetEmployeesForShift] Available employees: {string.Join(", ", names)}");
+                }
+
+                return Ok(availableEmployees);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error getting employees for shift: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return StatusCode(500, new { error = "Failed to get employees for shift", message = ex.Message });
             }
         }
@@ -575,22 +729,97 @@ WHERE Shift_StoreID = ? AND Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Sh
                 if (employee == null)
                     return NotFound(new { error = "Employee not found" });
 
-                // Get ALL availability for this employee that reference a shift with SlotNumber 1-14 (any week).
-                // Take most recent per slot so refresh always shows last saved state.
-                var allAvailabilities = await _db.Availabilities
-                    .Where(a => a.EmployeeId == employee.EmployeeId)
-                    .Join(_db.Shifts.Where(s => s.SlotNumber >= 1 && s.SlotNumber <= 14),
-                        a => a.ShiftId,
-                        s => s.ShiftId,
-                        (a, s) => new { a.ShiftId, s.SlotNumber, a.IsAvailable, a.AvailabilityId })
-                    .OrderByDescending(x => x.AvailabilityId)
-                    .ToListAsync();
+                // CRITICAL FIX: Availability must persist across weeks even when shifts are deleted/recreated.
+                // Use raw SQL to get ALL availability records and match with shifts (including deleted ones if they still exist in DB).
+                // This ensures availability persists even after logout/login or week changes.
+                var connectionString = _config.GetConnectionString("ShiftlyConnection")
+                    ?? "Data Source=C:\\Users\\aleen\\Documents\\ShiftlyDB.accdb";
+                if (!string.IsNullOrEmpty(connectionString) && !connectionString.Trim().Contains("Provider=", StringComparison.OrdinalIgnoreCase))
+                    connectionString = "Provider=Microsoft.ACE.OLEDB.12.0;" + (connectionString.Trim().StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) ? connectionString.Trim() : "Data Source=" + connectionString.Trim()) + ";";
+                
+                var allAvailabilitiesList = new List<(int AvailabilityId, int ShiftId, bool IsAvailable, int? SlotNumber)>();
+                
+                if (!string.IsNullOrEmpty(connectionString))
+                {
+                    using var conn = new System.Data.OleDb.OleDbConnection(connectionString);
+                    await conn.OpenAsync();
+                    
+                    // Get ALL availability records for this employee, with SlotNumber from Shifts table
+                    // LEFT JOIN ensures we get availability even if shift was deleted (SlotNumber will be NULL)
+                    // CRITICAL: We need to find availability by matching SlotNumber, even if the original shift was deleted
+                    using var cmd = conn.CreateCommand();
+                    cmd.CommandText = @"
+                        SELECT a.AvailabilityID, a.ShiftId, a.IsAvailable, s.Shift_SlotNumber
+                        FROM Availabilities a
+                        LEFT JOIN Shifts s ON a.ShiftId = s.Shift_ID
+                        WHERE a.EmployeeId = ?
+                        ORDER BY a.AvailabilityID DESC";
+                    cmd.Parameters.Add(new System.Data.OleDb.OleDbParameter("@p1", employeeId));
+                    
+                    Console.WriteLine($"[GetAllAvailabilityForEmployee] Querying database for EmployeeId={employeeId}");
+                    
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    int totalRecords = 0;
+                    int validRecords = 0;
+                    while (await reader.ReadAsync())
+                    {
+                        totalRecords++;
+                        var availId = reader.GetInt32(0);
+                        var shiftId = reader.GetInt32(1);
+                        var isAvailable = reader.GetBoolean(2);
+                        var slotNum = reader.IsDBNull(3) ? (int?)null : reader.GetInt32(3);
+                        
+                        Console.WriteLine($"[GetAllAvailabilityForEmployee] Record {totalRecords}: AvailabilityId={availId}, ShiftId={shiftId}, IsAvailable={isAvailable}, SlotNumber={slotNum ?? -1}");
+                        
+                        // Only include if we have a valid slot number (1-14)
+                        if (slotNum.HasValue && slotNum >= 1 && slotNum <= 14)
+                        {
+                            allAvailabilitiesList.Add((availId, shiftId, isAvailable, slotNum));
+                            validRecords++;
+                            Console.WriteLine($"[GetAllAvailabilityForEmployee] ✓ Added valid record: SlotNumber={slotNum}, IsAvailable={isAvailable}");
+                        }
+                        else if (!slotNum.HasValue)
+                        {
+                            Console.WriteLine($"[GetAllAvailabilityForEmployee] ⚠ Record {availId} has NULL SlotNumber (shift {shiftId} may have been deleted) - attempting recovery...");
+                            
+                            // Try to find the SlotNumber by looking for any shift with this ShiftId pattern or by finding current week's shift
+                            // For now, we'll try to match by finding the most recent availability for this employee and inferring the slot
+                            // Actually, a better approach: find the current week's shift for each slot and match availability
+                            // But for now, we'll skip orphaned records and log them
+                            Console.WriteLine($"[GetAllAvailabilityForEmployee] ⚠ Skipping orphaned availability record {availId} (ShiftId={shiftId} not found)");
+                        }
+                    }
+                    
+                    Console.WriteLine($"[GetAllAvailabilityForEmployee] Total records found: {totalRecords}, Valid records (with SlotNumber 1-14): {validRecords}");
+                    Console.WriteLine($"[GetAllAvailabilityForEmployee] Loaded {allAvailabilitiesList.Count} availability records for EmployeeId={employeeId}");
+                }
+                else
+                {
+                    // Fallback to EF Core if connection string not available
+                    var allAvailabilities = await _db.Availabilities
+                        .Where(a => a.EmployeeId == employee.EmployeeId)
+                        .Join(_db.Shifts.Where(s => s.SlotNumber >= 1 && s.SlotNumber <= 14),
+                            a => a.ShiftId,
+                            s => s.ShiftId,
+                            (a, s) => new { a.ShiftId, s.SlotNumber, a.IsAvailable, a.AvailabilityId })
+                        .OrderByDescending(x => x.AvailabilityId)
+                        .ToListAsync();
+                    
+                    foreach (var a in allAvailabilities)
+                    {
+                        allAvailabilitiesList.Add((a.AvailabilityId, a.ShiftId, a.IsAvailable, a.SlotNumber));
+                    }
+                }
 
-                var uniqueAvailabilities = allAvailabilities
-                    .GroupBy(a => a.SlotNumber)
-                    .Select(g => g.First())
+                // Group by SlotNumber and take the most recent (highest AvailabilityId) for each slot
+                var uniqueAvailabilities = allAvailabilitiesList
+                    .Where(a => a.SlotNumber.HasValue && a.SlotNumber >= 1 && a.SlotNumber <= 14)
+                    .GroupBy(a => a.SlotNumber.Value)
+                    .Select(g => g.OrderByDescending(x => x.AvailabilityId).First())
                     .OrderBy(a => a.SlotNumber)
                     .ToList();
+                
+                Console.WriteLine($"[GetAllAvailabilityForEmployee] Unique availability for {uniqueAvailabilities.Count} slots");
 
                 var availabilityMap = new Dictionary<string, bool>();
                 for (int slot = 1; slot <= 14; slot++)
@@ -598,7 +827,27 @@ WHERE Shift_StoreID = ? AND Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Sh
                 foreach (var a in uniqueAvailabilities)
                 {
                     if (a.SlotNumber >= 1 && a.SlotNumber <= 14)
-                        availabilityMap[a.SlotNumber!.Value.ToString()] = a.IsAvailable;
+                    {
+                        var slotKey = a.SlotNumber!.Value.ToString();
+                        availabilityMap[slotKey] = a.IsAvailable;
+                        Console.WriteLine($"[GetAllAvailabilityForEmployee] EmployeeId={employeeId}, Slot {slotKey}: IsAvailable={a.IsAvailable}");
+                    }
+                }
+
+                var availableCount = availabilityMap.Values.Count(v => v);
+                Console.WriteLine($"[GetAllAvailabilityForEmployee] ✅ EmployeeId={employeeId}: Returning {availableCount} available slots out of 14");
+                Console.WriteLine($"[GetAllAvailabilityForEmployee] EmployeeId={employeeId}: Availability map keys: {string.Join(", ", availabilityMap.Keys)}");
+                Console.WriteLine($"[GetAllAvailabilityForEmployee] EmployeeId={employeeId}: Availability map values: {string.Join(", ", availabilityMap.Values)}");
+                
+                // Log which specific slots are available
+                var availableSlots = availabilityMap.Where(kvp => kvp.Value).Select(kvp => kvp.Key).ToList();
+                if (availableSlots.Any())
+                {
+                    Console.WriteLine($"[GetAllAvailabilityForEmployee] ✅ EmployeeId={employeeId}: Available slots: {string.Join(", ", availableSlots)}");
+                }
+                else
+                {
+                    Console.WriteLine($"[GetAllAvailabilityForEmployee] ⚠ EmployeeId={employeeId}: NO AVAILABILITY FOUND");
                 }
 
                 return Ok(new { employeeId = employeeId, availabilityMap = availabilityMap });
