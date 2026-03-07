@@ -712,37 +712,6 @@ const App: React.FC = () => {
     setIsAnalyzing(false);
   };
 
-  // Share schedule with workers: mark this week as published so workers can see their shifts
-  const [sharingSchedule, setSharingSchedule] = useState(false);
-  const handleShareScheduleWithWorkers = async () => {
-    if (!user?.storeId) return;
-    setSharingSchedule(true);
-    try {
-      const today = new Date();
-      const day = today.getDay();
-      const diff = day === 0 ? -6 : 1 - day;
-      const monday = new Date(today);
-      monday.setDate(today.getDate() + diff);
-      monday.setHours(0, 0, 0, 0);
-      const weekStartParam = encodeURIComponent(monday.toISOString());
-      const response = await fetch(
-        `/api/schedule/publish?storeId=${user.storeId}&weekStart=${weekStartParam}`,
-        { method: 'POST', credentials: 'include' }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        alert(data.message || '✅ Schedule shared successfully! All workers can now see their individual schedules on their worker page (Schedule tab).');
-      } else {
-        const err = await response.json().catch(() => ({}));
-        alert(err.message || err.error || 'Failed to share schedule. Try again.');
-      }
-    } catch (err: any) {
-      alert(err.message || 'Failed to share schedule.');
-    } finally {
-      setSharingSchedule(false);
-    }
-  };
-
   const generateFastPerformanceReport = (shifts: Shift[], employees: Employee[]): string => {
     const assignedShifts = shifts.filter(s => s.assignedEmployeeId);
     const unassignedShifts = shifts.filter(s => !s.assignedEmployeeId);
@@ -1196,15 +1165,6 @@ const App: React.FC = () => {
                 >
                     <i className={`fas ${isAnalyzing ? 'fa-spinner fa-spin' : 'fa-chart-line'}`}></i>
                     <span className="hidden sm:inline ml-2">Report</span>
-                </button>
-                <button 
-                    onClick={handleShareScheduleWithWorkers}
-                    disabled={sharingSchedule}
-                    className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg disabled:opacity-50 transform hover:scale-105 active:scale-95"
-                    title="Share schedule with workers so they can see their shifts"
-                >
-                    <i className={`fas ${sharingSchedule ? 'fa-spinner fa-spin' : 'fa-share-alt'}`}></i>
-                    <span className="hidden sm:inline ml-2">Share with workers</span>
                 </button>
               </div>
             )}
