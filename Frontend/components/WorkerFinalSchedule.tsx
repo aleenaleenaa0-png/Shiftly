@@ -28,7 +28,6 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
   const [schedulePublished, setSchedulePublished] = useState<boolean | null>(null);
   const prevPublishedRef = useRef<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [totalShiftsFound, setTotalShiftsFound] = useState<number>(0);
 
   // Helper function to get current week start (Monday)
   const getCurrentWeekStart = () => {
@@ -144,16 +143,7 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
         console.log('WorkerFinalSchedule: Total shifts in response:', allRaw.length);
         
         if (allRaw.length === 0) {
-          console.error('WorkerFinalSchedule: ⚠️⚠️⚠️ API RETURNED EMPTY ARRAY ⚠️⚠️⚠️');
-          console.error('WorkerFinalSchedule: This means NO shifts are assigned to:');
-          console.error('WorkerFinalSchedule:   - EmployeeId:', userId);
-          console.error('WorkerFinalSchedule:   - StoreId:', storeId);
-          console.error('WorkerFinalSchedule:');
-          console.error('WorkerFinalSchedule: POSSIBLE CAUSES:');
-          console.error('WorkerFinalSchedule:   1. Manager has NOT assigned any shifts to this employee');
-          console.error('WorkerFinalSchedule:   2. Shifts are assigned to a different EmployeeId');
-          console.error('WorkerFinalSchedule:   3. Shifts are in a different StoreId');
-          console.error('WorkerFinalSchedule:   4. EmployeeId in Shifts table is NULL');
+          console.log('WorkerFinalSchedule: No shifts assigned for employeeId=', userId, 'storeId=', storeId);
         }
         console.log('WorkerFinalSchedule: ========================================');
         
@@ -272,35 +262,10 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
         if (allRaw.length > 0) {
           console.log('WorkerFinalSchedule: ✓✓✓ SHIFTS FOUND - Showing ALL', allRaw.length, 'shift(s) to worker');
           console.log('WorkerFinalSchedule: Date filtering DISABLED to ensure worker sees their schedule');
-        } else {
-          console.error('WorkerFinalSchedule: ✗✗✗ NO SHIFTS RETURNED FROM API');
-          console.error('WorkerFinalSchedule: API returned empty array');
-          console.error('WorkerFinalSchedule: This means NO shifts are assigned to employeeId=', userId, 'in storeId=', storeId);
-          console.error('WorkerFinalSchedule: Please verify:');
-          console.error('  1. Manager has assigned shifts to this employee');
-          console.error('  2. The EmployeeId in Shifts table matches userId=', userId);
-          console.error('  3. The StoreId in Shifts table matches storeId=', storeId);
         }
         
         const mappedShifts = shiftsToShow.map(mapShift);
-        console.log('WorkerFinalSchedule: ========================================');
-        console.log('WorkerFinalSchedule: FINAL RESULT');
-        console.log('WorkerFinalSchedule: API returned:', allRaw.length, 'shift(s)');
-        console.log('WorkerFinalSchedule: Will display:', mappedShifts.length, 'shift(s)');
-        if (mappedShifts.length > 0) {
-          console.log('WorkerFinalSchedule: ✓✓✓ SUCCESS - Worker WILL see their shifts');
-          mappedShifts.forEach((shift, idx) => {
-            console.log(`WorkerFinalSchedule:   Shift ${idx + 1}: ${shift.startTime} - ${shift.endTime} (Slot ${shift.slotNumber})`);
-          });
-        } else {
-          console.error('WorkerFinalSchedule: ✗✗✗ FAILURE - Worker will see NO shifts');
-          console.error('WorkerFinalSchedule: This means the API returned 0 shifts');
-          console.error('WorkerFinalSchedule: The shifts are NOT assigned in the database');
-        }
-        console.log('WorkerFinalSchedule: ========================================');
-        
         setShifts(mappedShifts);
-        setTotalShiftsFound(allRaw.length); // Store total for display
       } catch (err) {
         console.error('WorkerFinalSchedule: Error fetching shifts:', err);
         setError(err instanceof Error ? err.message : 'Failed to load schedule. Please check your connection.');
@@ -384,57 +349,14 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
           </p>
           {error && (
             <div className="text-sm text-red-600 mt-2 font-medium bg-red-50 p-3 rounded-lg border border-red-200">
-              <p className="font-bold">⚠️ Error loading schedule:</p>
+              <p className="font-bold">Could not load schedule</p>
               <p>{error}</p>
-              <p className="text-xs text-gray-600 mt-1">Please check the browser console for more details.</p>
             </div>
           )}
-          {!hasAnyShifts && !loading && !error && (
-            <div className="text-sm text-red-600 mt-2 font-medium space-y-2 bg-red-50 p-4 rounded-lg border-2 border-red-300">
-              <p className="font-bold text-lg">
-                ⚠️ No shifts found
-              </p>
-              {totalShiftsFound > 0 ? (
-                <div className="bg-yellow-50 p-3 rounded border border-yellow-300 mt-2">
-                  <p className="text-yellow-800 font-semibold">
-                    ⚠️ Found {totalShiftsFound} shift(s) in database, but they couldn't be displayed.
-                  </p>
-                  <p className="text-xs text-yellow-700 mt-1">
-                    This is unusual. Check browser console (F12) for details.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <p className="font-semibold">
-                    The API returned 0 shifts for your account.
-                  </p>
-                  <p className="text-xs">
-                    This means:
-                  </p>
-                  <ul className="list-disc list-inside text-xs space-y-1 ml-2 bg-white p-2 rounded">
-                    <li><strong>No shifts are assigned to you in the database</strong></li>
-                    <li>The manager needs to assign shifts to you first</li>
-                    <li>Then the manager needs to click "Share with workers"</li>
-                  </ul>
-                  <div className="bg-blue-50 p-3 rounded border border-blue-200 mt-2">
-                    <p className="text-xs font-semibold text-blue-800 mb-1">To fix this:</p>
-                    <ol className="list-decimal list-inside text-xs text-blue-700 space-y-1">
-                      <li>Manager should go to Schedule page</li>
-                      <li>Manager should assign you to shifts (drag your name to shifts)</li>
-                      <li>Manager should click "Share with workers" button</li>
-                      <li>Then refresh this page</li>
-                    </ol>
-                  </div>
-                </div>
-              )}
-              <div className="mt-3 p-2 bg-gray-100 rounded text-xs">
-                <p className="font-semibold">Debug Information:</p>
-                <p>userId (EmployeeId): <strong>{userId}</strong></p>
-                <p>storeId: <strong>{storeId}</strong></p>
-                <p className="mt-1 text-gray-600">API Endpoint: <code>/api/shifts/for-employee?employeeId={userId}&storeId={storeId}</code></p>
-                <p className="mt-1 text-gray-600">Check browser console (F12) for detailed API response.</p>
-              </div>
-            </div>
+          {!hasAnyShifts && !error && (
+            <p className="text-sm text-slate-500 mt-2">
+              You have <span className="font-semibold text-slate-600">0 shifts</span> scheduled this week.
+            </p>
           )}
         </div>
         <div className="flex gap-2 flex-wrap">

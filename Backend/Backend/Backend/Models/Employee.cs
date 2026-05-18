@@ -30,8 +30,7 @@ namespace Backend.Models
         [StringLength(200)]
         public string? Email { get; set; }
 
-        // Access Employees table does NOT have Password column - employees login with email only
-        [NotMapped]
+        [StringLength(200)]
         public string? Password { get; set; }
 
         public ICollection<Availability> Availabilities { get; set; } = new List<Availability>();

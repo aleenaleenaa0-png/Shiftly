@@ -96,6 +96,8 @@ namespace Backend.Models
             {
                 entity.Property(e => e.HourlyWage)
                     .HasColumnType("decimal(18,2)");
+                entity.Property(e => e.Password)
+                    .HasMaxLength(200);
             });
 
             modelBuilder.Entity<Store>()

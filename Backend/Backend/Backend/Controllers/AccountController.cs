@@ -308,10 +308,6 @@ namespace Backend.Controllers
                 {
                     try
                     {
-                        // Access Employees table structure: EmployeeId, FirstName, HourlyWage, ProductivityScore, StoreId, Email
-                        // NO LastName, NO Password columns - employees login with email only
-                        
-                        // Get all employees and filter by email
                         List<Employee> allEmployees;
                         try
                         {
@@ -322,11 +318,12 @@ namespace Backend.Controllers
                             allEmployees = new List<Employee>();
                     }
                     
-                        // Filter by email only (no password check - employees don't have password column)
                     employee = allEmployees
-                        .Where(e => 
-                            e.Email != null && 
-                                e.Email.Trim().Equals(email, StringComparison.OrdinalIgnoreCase))
+                        .Where(e =>
+                            e.Email != null &&
+                            e.Email.Trim().Equals(email, StringComparison.OrdinalIgnoreCase) &&
+                            !string.IsNullOrEmpty(e.Password) &&
+                            e.Password.Trim() == password)
                             .OrderBy(e => e.EmployeeId)
                         .FirstOrDefault();
                     
@@ -481,8 +478,11 @@ namespace Backend.Controllers
                 {
                     return BadRequest(new { error = "Email and username are required" });
                 }
-                // Note: Password is NOT required for employees - they login with email only
-                // Access Employees table does NOT have Password column
+
+                if (string.IsNullOrWhiteSpace(signUpDto.Password))
+                {
+                    return BadRequest(new { error = "Password is required" });
+                }
 
                 if (signUpDto.StoreId <= 0)
                 {
@@ -613,6 +613,36 @@ namespace Backend.Controllers
                     }
                 }
 
+                // Ensure Password column exists on Employees table
+                try
+                {
+                    await _db.Employees
+                        .Where(e => e.Password != null)
+                        .Take(1)
+                        .ToListAsync();
+                    Console.WriteLine("✓ Password column exists in Employees table");
+                }
+                catch (Exception passwordColEx)
+                {
+                    if (passwordColEx.Message.Contains("unknown field name") || passwordColEx.Message.Contains("Password") ||
+                        passwordColEx.Message.Contains("required parameters"))
+                    {
+                        Console.WriteLine("⚠ Password column missing. Adding it...");
+                        try
+                        {
+                            await _db.Database.ExecuteSqlRawAsync("ALTER TABLE Employees ADD COLUMN Password TEXT(200)");
+                            Console.WriteLine("✓ Added Password column");
+                        }
+                        catch (Exception addPasswordEx)
+                        {
+                            if (!addPasswordEx.Message.Contains("already exists") && !addPasswordEx.Message.Contains("duplicate"))
+                            {
+                                Console.WriteLine($"⚠ Could not add Password column: {addPasswordEx.Message}");
+                            }
+                        }
+                    }
+                }
+
                 // Check if email already exists (check both Users and Employees)
                 // Use safe query that handles missing Email column
                 bool emailExists = false;
@@ -681,9 +711,8 @@ namespace Backend.Controllers
                 // IMPORTANT: Signup creates an Employee (Worker), NOT a Manager (User)
                 // Managers must be created through the UsersController by existing managers
                 // This endpoint is ONLY for employee/worker signup
-                // Access Employees table structure: EmployeeId, FirstName, HourlyWage, ProductivityScore, StoreId, Email
-                // NO LastName, NO Password columns in Employees table
                 var username = signUpDto.Username.Trim();
+                var password = signUpDto.Password.Trim();
                 var firstName = username; // Store username in FirstName
 
                 // DETAILED PARAMETER VALIDATION AND LOGGING
@@ -697,8 +726,6 @@ namespace Backend.Controllers
                 Console.WriteLine($"ProductivityScore: 5.0 (Type: {5.0.GetType().Name})");
                 Console.WriteLine($"StoreId: {signUpDto.StoreId} (Type: {signUpDto.StoreId.GetType().Name}, IsValid: {signUpDto.StoreId > 0})");
                 Console.WriteLine("═══════════════════════════════════════════════════════");
-                Console.WriteLine("NOTE: Employees table does NOT have LastName or Password columns");
-                Console.WriteLine("Employees table structure: EmployeeId, FirstName, HourlyWage, ProductivityScore, StoreId, Email");
                 Console.WriteLine("═══════════════════════════════════════════════════════");
 
                 // Validate all required parameters
@@ -707,7 +734,10 @@ namespace Backend.Controllers
                     validationErrors.Add("Username is required and cannot be empty");
                 if (string.IsNullOrWhiteSpace(signUpDto.Email?.Trim()))
                     validationErrors.Add("Email is required and cannot be empty");
-                // Note: Password is NOT stored for employees - they login with email only
+                if (string.IsNullOrWhiteSpace(password))
+                    validationErrors.Add("Password is required and cannot be empty");
+                if (password.Length < 3)
+                    validationErrors.Add("Password must be at least 3 characters");
                 if (signUpDto.StoreId <= 0)
                     validationErrors.Add($"StoreId must be greater than 0 (received: {signUpDto.StoreId})");
 
@@ -738,7 +768,8 @@ namespace Backend.Controllers
                                 e.HourlyWage, 
                                 e.ProductivityScore, 
                                 e.StoreId,
-                                e.Email
+                                e.Email,
+                                e.Password
                             })
                             .Take(1)
                             .ToListAsync();
@@ -773,19 +804,16 @@ namespace Backend.Controllers
                 Console.WriteLine($"  StoreId: {signUpDto.StoreId}");
                 Console.WriteLine($"  Email: '{signUpDto.Email.Trim()}'");
                 Console.WriteLine("═══════════════════════════════════════════════════════");
-                Console.WriteLine("NOTE: Employees table does NOT have LastName or Password columns");
                 Console.WriteLine("═══════════════════════════════════════════════════════");
                 
-                // Step 1: Create employee with only fields that exist in Access Employees table
-                // Access structure: EmployeeId, FirstName, HourlyWage, ProductivityScore, StoreId, Email
                 var basicEmployee = new Employee
                 {
                     FirstName = firstName,
                     HourlyWage = 0m,
                     ProductivityScore = 5.0,
                     StoreId = signUpDto.StoreId,
-                    Email = signUpDto.Email.Trim()
-                    // NO LastName, NO Password - these don't exist in Access Employees table
+                    Email = signUpDto.Email.Trim(),
+                    Password = password
                 };
                 
                 try
@@ -817,9 +845,7 @@ namespace Backend.Controllers
                     });
                 }
                 
-                // Email is already set in the employee object above
-                // Employees table in Access does NOT have Password column
-                Console.WriteLine("✓ Employee created with Email (Password not stored - employees login with email only)");
+                Console.WriteLine("✓ Employee created with Email and Password");
 
                 // Fetch the final employee data
                 var finalEmployee = await _db.Employees
