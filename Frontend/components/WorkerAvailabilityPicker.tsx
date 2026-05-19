@@ -1,3 +1,7 @@
+/**
+ * WorkerAvailabilityPicker.tsx — اختيار التوفر داخل WorkerPortal
+ * نفس منطق EmployeeAvailability: حفظ كل فتحة في Access عبر API.
+ */
 import React, { useState, useEffect } from 'react';
 import { DAYS } from '../constants';
 

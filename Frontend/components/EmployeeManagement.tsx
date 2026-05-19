@@ -1,3 +1,7 @@
+/**
+ * EmployeeManagement.tsx — إدارة العمال (صفحة المدير)
+ * CRUD على /api/employees — إضافة، تعديل، حذف، وعرض توفر كل عامل.
+ */
 import React, { useState, useEffect } from 'react';
 import { DAYS } from '../constants';
 

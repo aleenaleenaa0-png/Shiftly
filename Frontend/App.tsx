@@ -1,3 +1,23 @@
+/**
+ * =============================================================================
+ * App.tsx — الواجهة الرئيسية لـ Shiftly
+ * =============================================================================
+ *
+ * تدفق المستخدم:
+ * 1) غير مسجّل → Login أو SignUp
+ * 2) مدير → schedule (جدول) | employees | users
+ * 3) عامل → WorkerPortal (توفر + جدولي)
+ *
+ * للمختبر — سيناريو كامل:
+ * أ) عامل: SignUp → Login → حدّد توفر (عدة فتحات)
+ * ب) مدير: Login → Schedule → تحقق من شارات التوفر → اسحب عاملاً → Publish
+ * ج) عامل: تبويب Schedule → يظهر الجدول بعد النشر
+ *
+ * خرائط مهمة في هذا الملف:
+ * - shiftAvailabilityMap: لكل مناوبة، قائمة معرّفات العمال المتاحين
+ * - employeeAvailabilityMap: لكل عامل، الفتحات 1–14 (true/false)
+ * =============================================================================
+ */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Shift, Employee, ScheduleKPIs } from './types';
@@ -12,6 +32,13 @@ import Login from './components/Login';
 import SignUp from './components/SignUp';
 import Logo from './components/Logo';
 import { getScheduleOptimizationInsights, getSmartSuggestion, autoGenerateSchedule } from './geminiService';
+import ProductivityWarningModal, {
+  ProductivityWarningContext,
+} from './components/ProductivityWarningModal';
+import {
+  calculateProjectedThroughput,
+  passesThroughputThreshold,
+} from './utils/throughput';
 
 type Page = 'schedule' | 'employees' | 'availability' | 'users';
 
@@ -26,7 +53,7 @@ interface User {
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<Page>('schedule');
   
-  // Function to safely set page - prevents employees from accessing manager pages
+  // منع العامل من فتح صفحات المدير والعكس
   const setPage = (page: Page) => {
     // Only enforce restrictions if user is logged in
     if (!user) {
@@ -75,6 +102,12 @@ const App: React.FC = () => {
   const [employeeAvailabilityMap, setEmployeeAvailabilityMap] = useState<Map<string, Record<string, boolean>>>(new Map()); // employeeId -> availabilityMap (slot 1-14 -> boolean)
   const availabilityIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const fetchAvailabilityRef = useRef<() => Promise<void>>(async () => {});
+  const [productivityWarning, setProductivityWarning] =
+    useState<ProductivityWarningContext | null>(null);
+  const [pendingAssignment, setPendingAssignment] = useState<{
+    shiftId: string;
+    employeeId: string;
+  } | null>(null);
 
   const getWeekMonday = () => {
     const today = new Date();
@@ -110,7 +143,7 @@ const App: React.FC = () => {
     });
   }, [shifts, employees]);
 
-  // Check authentication status
+  // ─── عند فتح التطبيق: هل هناك جلسة دخول سابقة؟ (/api/account/me) ───
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -165,7 +198,7 @@ const App: React.FC = () => {
     checkBackend();
   }, []);
 
-  // Fetch employees from database - dynamic, no hardcoding
+  // ─── المدير فقط: جلب قائمة العمال من Access ───
   useEffect(() => {
     if (!user || (user.role !== 'Manager' && user.userType !== 'Manager')) {
       setEmployees([]); // Clear employees if not manager
@@ -234,7 +267,7 @@ const App: React.FC = () => {
     fetchEmployees();
   }, [user]);
 
-  // Fetch shifts from database - dynamic, no hardcoding
+  // ─── المدير فقط: جلب 14 مناوبة للأسبوع الحالي ───
   useEffect(() => {
     if (!user || (user.role !== 'Manager' && user.userType !== 'Manager')) {
       setShifts([]); // Clear shifts if not manager
@@ -293,6 +326,7 @@ const App: React.FC = () => {
     fetchShifts();
   }, [user]);
 
+  // ─── جلب توفر كل العمال من قاعدة Access (للشريط الجانبي والسحب) ───
   const fetchAvailability = useCallback(async () => {
     if (shifts.length === 0 || employees.length === 0) return;
 
@@ -338,7 +372,7 @@ const App: React.FC = () => {
 
   fetchAvailabilityRef.current = fetchAvailability;
 
-  // Refresh manager availability from Access whenever schedule data is ready
+  // تحديث التوفر كل 5 ثوانٍ وأيضاً عند العودة للتبويب (حتى يرى المدير تغييرات العامل)
   useEffect(() => {
     const isManager = user && (user.role === 'Manager' || user.userType === 'Manager');
     if (!isManager || currentPage !== 'schedule') {
@@ -399,106 +433,135 @@ const App: React.FC = () => {
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDrop = async (e: React.DragEvent, shiftId: string) => {
-    e.preventDefault();
-    const employeeId = e.dataTransfer.getData('employeeId');
-    if (employeeId) {
-      const backendShiftId = parseInt(shiftId);
-      const backendEmployeeId = parseInt(employeeId);
-      const shift = shifts.find(s => s.id === shiftId);
-      const availableEmployeeIds = shiftAvailabilityMap.get(shiftId) || [];
-      const empSlotMap = employeeAvailabilityMap.get(employeeId) || {};
-      const slotKey = shift?.slotNumber ? String(shift.slotNumber) : '';
-      const availableBySlot = slotKey ? empSlotMap[slotKey] === true : false;
-      const isAvailableForShift =
-        availableEmployeeIds.some((id: number | string) => Number(id) === backendEmployeeId) ||
-        availableBySlot;
+  const executeAssignment = async (shiftId: string, employeeId: string) => {
+    const backendShiftId = parseInt(shiftId);
+    const backendEmployeeId = parseInt(employeeId);
 
-      const hasAvailabilityData =
-        availableEmployeeIds.length > 0 || Object.values(empSlotMap).some(v => v === true);
+    setShifts(prev =>
+      prev.map(s => (s.id === shiftId ? { ...s, assignedEmployeeId: employeeId } : s))
+    );
 
-      if (hasAvailabilityData && !isAvailableForShift) {
-        const emp = employees.find(e => e.id === employeeId);
-        const name = emp?.name ?? 'This employee';
-        alert(
-          `Only employees who have set availability for this shift can be assigned.\n\n` +
-          `${name} has not marked themselves available for this shift. ` +
-          `They can set their availability in the Worker Portal (Availability / Set Availability), then you can assign them here.`
+    try {
+      const response = await fetch(`/api/shifts/${backendShiftId}/assign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ employeeId: backendEmployeeId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        setShifts(prev =>
+          prev.map(s => (s.id === shiftId ? { ...s, assignedEmployeeId: null } : s))
         );
+        console.error('Failed to assign employee to shift');
+        alert(errorData.message || 'Failed to assign employee to shift. Please try again.');
         return;
       }
 
-      // Optimistically update UI
-      setShifts(prev => prev.map(s => 
-          s.id === shiftId ? { ...s, assignedEmployeeId: employeeId } : s
-      ));
-      
-      // Save to database using the assign endpoint
-      try {
-        const response = await fetch(`/api/shifts/${backendShiftId}/assign`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+      console.log(`✓ Assigned employee ${employeeId} to shift ${shiftId} in database`);
+      if (user) {
+        const monday = getWeekMonday();
+        const shiftsResponse = await fetch(`/api/shifts?weekStart=${monday.toISOString()}`, {
           credentials: 'include',
-          body: JSON.stringify({
-            employeeId: backendEmployeeId
-          })
         });
-        
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          // Revert on error
-          setShifts(prev => prev.map(s => 
-              s.id === shiftId ? { ...s, assignedEmployeeId: null } : s
-          ));
-          console.error('Failed to assign employee to shift');
-          alert(errorData.message || 'Failed to assign employee to shift. Please try again.');
-        } else {
-          console.log(`✓ Assigned employee ${employeeId} to shift ${shiftId} in database`);
-          // Refresh shifts to get updated data from database
-          if (user) {
-            const today = new Date();
-            const day = today.getDay();
-            const diff = today.getDate() - day + (day === 0 ? -6 : 1);
-            const monday = new Date(today.setDate(diff));
-            monday.setHours(0, 0, 0, 0);
-            
-            const shiftsResponse = await fetch(`/api/shifts?weekStart=${monday.toISOString()}`, {
-              credentials: 'include'
-            });
-            if (shiftsResponse.ok) {
-              const data = await shiftsResponse.json();
-              const mappedShifts: Shift[] = data.map((shift: any) => {
-                const startTime = new Date(shift.StartTime || shift.startTime);
-                const endTime = new Date(shift.EndTime || shift.endTime);
-                const dayName = startTime.toLocaleDateString('en-US', { weekday: 'long' });
-                const startHour = startTime.getHours();
-                const isMorning = startHour >= 9 && startHour < 15;
-                
-                return {
-                  id: (shift.ShiftId || shift.shiftId).toString(),
-                  day: dayName,
-                  startTime: startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false }),
-                  endTime: endTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false }),
-                  type: isMorning ? 'Morning' : 'Afternoon',
-                  targetSales: shift.RequiredProductivity || shift.requiredProductivity || 2500,
-                  assignedEmployeeId: shift.EmployeeId || shift.employeeId ? (shift.EmployeeId || shift.employeeId).toString() : null
-                };
-              });
-              setShifts(mappedShifts);
-            }
-          }
+        if (shiftsResponse.ok) {
+          const data = await shiftsResponse.json();
+          const mappedShifts: Shift[] = data.map((shift: any) => {
+            const startTime = new Date(shift.StartTime || shift.startTime);
+            const endTime = new Date(shift.EndTime || shift.endTime);
+            const dayName = startTime.toLocaleDateString('en-US', { weekday: 'long' });
+            const startHour = startTime.getHours();
+            const isMorning = startHour >= 9 && startHour < 15;
+
+            return {
+              id: (shift.ShiftId || shift.shiftId).toString(),
+              day: dayName,
+              startTime: startTime.toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: false,
+              }),
+              endTime: endTime.toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: false,
+              }),
+              type: isMorning ? 'Morning' : 'Afternoon',
+              slotNumber: shift.SlotNumber ?? shift.slotNumber ?? 0,
+              targetSales: shift.RequiredProductivity || shift.requiredProductivity || 2500,
+              assignedEmployeeId:
+                shift.EmployeeId || shift.employeeId
+                  ? (shift.EmployeeId || shift.employeeId).toString()
+                  : null,
+            };
+          });
+          setShifts(mappedShifts);
         }
-      } catch (err) {
-        console.error('Error assigning employee to shift:', err);
-        // Revert on error
-        setShifts(prev => prev.map(s => 
-            s.id === shiftId ? { ...s, assignedEmployeeId: null } : s
-        ));
-        alert('Error assigning employee to shift. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error assigning employee to shift:', err);
+      setShifts(prev =>
+        prev.map(s => (s.id === shiftId ? { ...s, assignedEmployeeId: null } : s))
+      );
+      alert('Error assigning employee to shift. Please try again.');
+    }
+  };
+
+  const handleProductivityWarningCancel = () => {
+    setProductivityWarning(null);
+    setPendingAssignment(null);
+  };
+
+  const handleProductivityWarningProceed = async () => {
+    if (!pendingAssignment) return;
+    const { shiftId, employeeId } = pendingAssignment;
+    setProductivityWarning(null);
+    setPendingAssignment(null);
+    await executeAssignment(shiftId, employeeId);
+  };
+
+  // ─── سحب عامل وإفلاته على مناوبة: التحقق من التوفر ثم الإنتاجية ثم الحفظ في API ───
+  const handleDrop = async (e: React.DragEvent, shiftId: string) => {
+    e.preventDefault();
+    const employeeId = e.dataTransfer.getData('employeeId');
+    if (!employeeId) return;
+
+    const backendEmployeeId = parseInt(employeeId);
+    const shift = shifts.find(s => s.id === shiftId);
+    const emp = employees.find(e => e.id === employeeId);
+    const availableEmployeeIds = shiftAvailabilityMap.get(shiftId) || [];
+    const empSlotMap = employeeAvailabilityMap.get(employeeId) || {};
+    const slotKey = shift?.slotNumber ? String(shift.slotNumber) : '';
+    const availableBySlot = slotKey ? empSlotMap[slotKey] === true : false;
+    const isAvailableForShift =
+      availableEmployeeIds.some((id: number | string) => Number(id) === backendEmployeeId) ||
+      availableBySlot;
+
+    const hasAvailabilityData =
+      availableEmployeeIds.length > 0 || Object.values(empSlotMap).some(v => v === true);
+
+    if (hasAvailabilityData && !isAvailableForShift) {
+      const name = emp?.name ?? 'This employee';
+      alert(
+        `Only employees who have set availability for this shift can be assigned.\n\n` +
+          `${name} has not marked themselves available for this shift. ` +
+          `They can set their availability in the Worker Portal (Availability / Set Availability), then you can assign them here.`
+      );
+      return;
+    }
+
+    if (shift && emp) {
+      const required = shift.targetSales || 0;
+      const projected = calculateProjectedThroughput(emp.productivityScore, shift);
+      if (required > 0 && !passesThroughputThreshold(projected, required)) {
+        setProductivityWarning({ employee: emp, shift });
+        setPendingAssignment({ shiftId, employeeId });
+        return;
       }
     }
+
+    await executeAssignment(shiftId, employeeId);
   };
 
   // Fast local auto-schedule algorithm (no API calls)
@@ -1221,6 +1284,12 @@ const App: React.FC = () => {
       <style dangerouslySetInnerHTML={{ __html: `
         .dir-rtl { direction: rtl; }
       `}} />
+
+      <ProductivityWarningModal
+        context={productivityWarning}
+        onCancel={handleProductivityWarningCancel}
+        onProceed={handleProductivityWarningProceed}
+      />
     </div>
   );
 };

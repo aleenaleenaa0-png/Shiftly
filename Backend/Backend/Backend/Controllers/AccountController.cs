@@ -1,3 +1,15 @@
+// =============================================================================
+// AccountController.cs — تسجيل الدخول والتسجيل
+// =============================================================================
+// login: يبحث أولاً في Users (مدير) ثم في Employees (عامل).
+// signup: يُنشئ عاملاً جديداً في Employees فقط (ليس مديراً).
+// me: من مسجّل الدخول حالياً؟ (يُستخدم عند فتح التطبيق).
+//
+// للمختبر:
+//   - مدير: manager@shiftly.com / manager123
+//   - عامل: سجّل من SignUp ثم سجّل دخول بنفس البريد وكلمة المرور
+// =============================================================================
+
 using Backend.Models;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -19,6 +31,7 @@ namespace Backend.Controllers
             _db = db;
         }
 
+        /// <summary>تسجيل الدخول — يُرجع دور Manager أو Employee مع Cookie.</summary>
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
         {
@@ -390,6 +403,7 @@ namespace Backend.Controllers
             }
         }
 
+        /// <summary>تسجيل عامل جديد — يُحفظ في Employees (ليس Users).</summary>
         [HttpPost("signup")]
         public async Task<IActionResult> SignUp([FromBody] SignUpDto signUpDto)
         {
@@ -1002,6 +1016,7 @@ namespace Backend.Controllers
             }
         }
 
+        /// <summary>من المستخدم الحالي؟ — يُستدعى عند فتح التطبيق للتحقق من الجلسة.</summary>
         [HttpGet("me")]
         public async Task<IActionResult> GetCurrentUser()
         {

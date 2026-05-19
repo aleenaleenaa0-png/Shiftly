@@ -1,3 +1,8 @@
+/**
+ * WorkerPortal.tsx — بوابة العامل
+ * تبويبان: Schedule (جدولي بعد النشر) | Availability (تحديد التوفر)
+ * للمختبر: العامل لا يرى صفحات المدير أبداً.
+ */
 import React, { useState, useEffect } from 'react';
 import WorkerHeader from './WorkerHeader';
 import WorkerStatCard from './WorkerStatCard';

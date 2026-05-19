@@ -1,3 +1,7 @@
+/**
+ * SignUp.tsx — تسجيل عامل جديد فقط (ليس مديراً)
+ * للمختبر: POST /api/account/signup ثم Login بنفس البيانات.
+ */
 import React, { useState } from 'react';
 import Logo from './Logo';
 

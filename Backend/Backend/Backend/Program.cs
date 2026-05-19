@@ -1,3 +1,15 @@
+// =============================================================================
+// Program.cs — نقطة تشغيل السيرفر (Backend)
+// =============================================================================
+// ما يحدث عند التشغيل:
+// 1) الاتصال بملف Access (ShiftlyDB.accdb)
+// 2) إنشاء مدير افتراضي إن لم يوجد
+// 3) إنشاء 14 مناوبة للأسبوع الحالي
+// 4) فتح API للواجهة الأمامية (CORS + Cookies)
+//
+// للمختبر: إن ظهر "Database is locked" — أغلق Microsoft Access.
+// =============================================================================
+
 using Backend.Models;
 using Backend.Services;
 using EntityFrameworkCore.Jet;
@@ -15,7 +27,7 @@ namespace Backend
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            // Fix for Access: EF Core Jet needs a "Dual" table. Create it and tell Jet to use it (avoids "cannot find #Dual").
+            // إعداد Access: جدول Dual مطلوب لمحرك Jet (تفاصيل تقنية — لا يحتاج اختبار يدوي)
             var connectionString = builder.Configuration.GetConnectionString("ShiftlyConnection")
                 ?? "Data Source=C:\\Users\\aleen\\Documents\\ShiftlyDB.accdb";
             EnsureDualTableExists(connectionString);
@@ -31,7 +43,7 @@ namespace Backend
                     options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
                 });
 
-            // Add CORS to allow frontend to call backend API
+            // السماح للواجهة (React على المنفذ 5173 أو 3000) بالاتصال بالـ API
             builder.Services.AddCors(options =>
             {
                 options.AddPolicy("AllowFrontend", policy =>
@@ -43,10 +55,9 @@ namespace Backend
                 });
             });
 
-            // Database: AppData with Access / Jet
             Console.WriteLine($"✓ Database connection: {connectionString}");
 
-            // Configure DbContext with proper connection management for Access
+            // ربط Entity Framework بقاعدة Access
             builder.Services.AddDbContext<AppData>(options =>
             {
                 options.UseJet(connectionString);
@@ -54,7 +65,7 @@ namespace Backend
                 options.EnableServiceProviderCaching(false);
             }, ServiceLifetime.Scoped);
 
-            // Authentication: simple cookie auth for store managers
+            // تسجيل الدخول عبر Cookie (يُرسل مع كل طلب من المتصفح بعد Login)
             builder.Services
                 .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
                 .AddCookie(options =>
@@ -75,8 +86,7 @@ namespace Backend
 
             var app = builder.Build();
 
-            // Ensure database and tables exist (best-effort)
-            // Note: We skip EnsureCreated if database is locked to avoid errors
+            // ─── عند بدء التشغيل: تجهيز قاعدة البيانات ───
             try
             {
                 using var scope = app.Services.CreateScope();
@@ -133,6 +143,7 @@ namespace Backend
                         
                         try
                         {
+                            // حساب المدير الافتراضي للاختبار الأول
                             if (!await db.Users.AnyAsync())
                             {
                                 db.Users.Add(new User
@@ -152,6 +163,7 @@ namespace Backend
 
                         try
                         {
+                            // إنشاء 14 مناوبة أسبوعية (ويُفرَّغ التوفر عند forceReset: true)
                             await ShiftBootstrap.ResetAndSeedCurrentWeekAsync(db, connectionString, forceReset: true);
                         }
                         catch (Exception shiftEx)

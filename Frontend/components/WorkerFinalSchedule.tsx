@@ -1,3 +1,8 @@
+/**
+ * WorkerFinalSchedule.tsx — جدول العامل النهائي
+ * يعرض المناوبات المعيّنة له بعد أن ينشر المدير الجدول.
+ * API: /api/shifts/for-employee و /api/schedule/publish/status
+ */
 import React, { useState, useEffect, useRef } from 'react';
 
 interface Shift {

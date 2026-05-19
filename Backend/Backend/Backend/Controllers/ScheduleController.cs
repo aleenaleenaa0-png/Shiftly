@@ -1,3 +1,12 @@
+// =============================================================================
+// ScheduleController.cs — نشر الجدول للعمال
+// =============================================================================
+// المدير يضغط "مشاركة الجدول" → POST publish
+// العامل يسأل GET publish/status ليعرف هل يُعرض جدوله النهائي.
+// ملاحظة: حالة النشر تُخزَّن في الذاكرة (تُفقد عند إعادة تشغيل السيرفر).
+// للمختبر: بعد إعادة تشغيل Backend قد يحتاج المدير النشر مرة أخرى.
+// =============================================================================
+
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -7,6 +16,7 @@ namespace Backend.Controllers
     [ApiController]
     public class ScheduleController : ControllerBase
     {
+        // مفتاح = بداية الأسبوع (yyyy-MM-dd)، قيمة = وقت النشر
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> PublishedSchedules = new();
 
         private static string Key(DateTime weekStart) => weekStart.ToString("yyyy-MM-dd");
@@ -20,6 +30,7 @@ namespace Backend.Controllers
             return dateTime.Date;
         }
 
+        /// <summary>المدير ينشر الجدول — بعدها العمال يرون مناوباتهم المعيّنة.</summary>
         [HttpPost("publish")]
         [Authorize(Roles = "Manager")]
         public IActionResult Publish([FromQuery] DateTime? weekStart = null)
@@ -38,6 +49,7 @@ namespace Backend.Controllers
             });
         }
 
+        /// <summary>هل الجدول منشور لهذا الأسبوع؟ (لصفحة جدول العامل)</summary>
         [HttpGet("publish/status")]
         public IActionResult GetPublishStatus([FromQuery] DateTime weekStart)
         {

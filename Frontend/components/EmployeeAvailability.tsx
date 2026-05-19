@@ -1,3 +1,8 @@
+/**
+ * EmployeeAvailability.tsx — واجهة توفر العامل (جدول أسبوعي)
+ * يحمّل من GET all-for-employee ويحفظ بـ POST set-availability.
+ * slotNumber 1–14 = الإثنين صباحاً … الأحد مساءً.
+ */
 import React, { useState, useEffect, useRef } from 'react';
 
 interface Shift {

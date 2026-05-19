@@ -1,3 +1,8 @@
+/**
+ * Login.tsx — صفحة تسجيل الدخول
+ * للمختبر: POST /api/account/login مع email و password.
+ * النجاح → يُعاد user مع role (Manager أو Employee) ويُحفظ Cookie.
+ */
 import React, { useState } from 'react';
 import Logo from './Logo';
 

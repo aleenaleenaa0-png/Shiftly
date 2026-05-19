@@ -1,3 +1,10 @@
+// =============================================================================
+// Employee.cs — حساب العامل (Worker)
+// =============================================================================
+// العامل يسجل عبر SignUp ويُخزَّن هنا (مع Email و Password).
+// LastName غير موجود في Access — الحقل للواجهة فقط (NotMapped).
+// =============================================================================
+
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;

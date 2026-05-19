@@ -1,17 +1,26 @@
+// =============================================================================
+// AppData.cs — ربط التطبيق بقاعدة Access
+// =============================================================================
+// هذا الملف يخبر ASP.NET كيف تتوافق جداول C# مع جداول Access.
+// للمختبر: أي تغيير في أسماء الأعمدة في Access قد يحتاج تعديل هنا.
+// =============================================================================
+
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Models
 {
+    /// <summary>السياق الرئيسي لقاعدة البيانات — كل الـ Controllers تستخدمه للقراءة والكتابة.</summary>
     public class AppData : DbContext
     {
         public AppData(DbContextOptions<AppData> options) : base(options)
         {
         }
 
-        public DbSet<User> Users => Set<User>();
-        public DbSet<Employee> Employees => Set<Employee>();
-        public DbSet<Shift> Shifts => Set<Shift>();
-        public DbSet<Availability> Availabilities => Set<Availability>();
+        // الجداول الأربعة الأساسية في ShiftlyDB.accdb
+        public DbSet<User> Users => Set<User>();           // مديرون
+        public DbSet<Employee> Employees => Set<Employee>(); // عمال
+        public DbSet<Shift> Shifts => Set<Shift>();         // مناوبات الأسبوع
+        public DbSet<Availability> Availabilities => Set<Availability>(); // توفر العمال
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

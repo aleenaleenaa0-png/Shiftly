@@ -1,3 +1,7 @@
+/**
+ * types.ts — أشكال البيانات في الواجهة (TypeScript)
+ * لا تطابق Access حرفياً — App.tsx يحوّل استجابة API إلى هذه الأشكال.
+ */
 
 export interface Employee {
   id: string;

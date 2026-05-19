@@ -1,3 +1,17 @@
+// =============================================================================
+// AvailabilitiesController.cs — توفر العمال (قلب التنسيق بين عامل ومدير)
+// =============================================================================
+// set-availability / set-slot — العامل يحدّد توفره (Slot 1–14).
+// all-for-employee/{id} — خريطة توفر عامل واحد.
+// manager-summary — كل التوفر دفعة واحدة (صفحة المدير).
+// for-shift/{shiftId} — من متاح لهذه المناوبة؟
+//
+// للمختبر:
+//   1) سجّل دخول كعامل → حدّد عدة فتحات متاحة
+//   2) سجّل دخول كمدير → يجب ظهور العدد والشارات في الشريط الجانبي
+//   3) اسحب عاملاً متاحاً فقط إلى مناوبة مطابقة
+// =============================================================================
+
 using Backend.Models;
 using Backend.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -171,9 +185,8 @@ namespace Backend.Controllers
         }
 
 
-        // POST: api/Availabilities/set-availability (alias: set-slot)
-        // Employee sets their availability for one shift. One shift = one row in Availabilities.
-        // Uses raw OleDb to avoid EF Core Jet #Dual table errors with Access.
+        // ─── العامل يحفظ توفره (فتحة 1–14) ───
+        // يُستدعى عند النقر على خانة في صفحة التوفر.
         [HttpPost("set-availability")]
         [HttpPost("set-slot")]
         public async Task<IActionResult> SetEmployeeAvailability([FromBody] SetSlotAvailabilityDto dto)
@@ -863,7 +876,8 @@ WHERE Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ?";
         }
 
         /// <summary>
-        /// Single call for the manager schedule: all employee slot maps + who is available per current-week shift.
+        /// ملخص التوفر للمدير — استدعاء واحد يعيد توفر كل العمال + من متاح لكل مناوبة.
+        /// يُحدَّث كل 5 ثوانٍ من صفحة الجدولة في الواجهة.
         /// </summary>
         [HttpGet("manager-summary")]
         public async Task<ActionResult<object>> GetManagerAvailabilitySummary([FromQuery] DateTime? weekStart = null)

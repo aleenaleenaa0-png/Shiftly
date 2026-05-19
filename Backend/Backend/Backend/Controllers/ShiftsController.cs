@@ -1,3 +1,11 @@
+// =============================================================================
+// ShiftsController.cs — المناوبات والتعيين
+// =============================================================================
+// GET /api/shifts — 14 مناوبة للأسبوع (لوحة المدير).
+// GET for-employee — مناوبات عامل معيّنة (جدول العامل).
+// POST {id}/assign — المدير يعيّن عاملاً لمناوبة (بعد السحب والإفلات).
+// =============================================================================
+
 using Backend.Models;
 using Backend.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -23,6 +31,7 @@ namespace Backend.Controllers
             _config.GetConnectionString("ShiftlyConnection")
             ?? "Data Source=C:\\Users\\aleen\\Documents\\ShiftlyDB.accdb";
 
+        /// <summary>جلب مناوبات الأسبوع — يُستدعى من صفحة جدولة المدير.</summary>
         [HttpGet]
         public async Task<ActionResult<IEnumerable<object>>> GetShifts([FromQuery] DateTime? weekStart = null)
         {

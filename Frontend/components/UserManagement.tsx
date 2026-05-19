@@ -1,3 +1,7 @@
+/**
+ * UserManagement.tsx — إدارة حسابات المديرين (جدول Users)
+ * للمختبر: إنشاء مدير إضافي للاختبار (يتطلب صلاحيات Manager).
+ */
 import React, { useState, useEffect } from 'react';
 
 interface BackendUser {

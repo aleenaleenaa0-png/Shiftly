@@ -1,4 +1,11 @@
-
+/**
+ * constants.ts — ثوابت الواجهة
+ * DAYS = أيام الأسبوع في الجدول.
+ * EMPLOYEES و INITIAL_SHIFTS = بيانات تجريبية قديمة؛ التطبيق الحقيقي يجلب من API.
+ *
+ * ترقيم الفتحات (لشرح المختبر):
+ * Slot 1 = Mon AM, 2 = Mon PM, 3 = Tue AM, … 14 = Sun PM
+ */
 import { Employee, Shift } from './types';
 
 export const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];

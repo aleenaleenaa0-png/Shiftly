@@ -1,4 +1,8 @@
-
+/**
+ * EmployeeSidebar.tsx — شريط العمال (للمدير)
+ * يعرض عدد المناوبات المتاحة لكل عامل + شارات Mon AM, Tue PM, ...
+ * للمختبر: بعد أن يحدّد العامل توفره، يجب تحديث هذه القائمة خلال 5 ثوانٍ.
+ */
 import React from 'react';
 import { Employee } from '../types';
 

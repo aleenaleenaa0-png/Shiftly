@@ -1,14 +1,20 @@
+// =============================================================================
+// ShiftBootstrap.cs — إنشاء 14 مناوبة لكل أسبوع
+// =============================================================================
+// عند تشغيل السيرفر: يُفرَّغ جدول المناوبات (والتوفر) ويُنشأ 14 صفاً جديداً.
+// Slot 1 = الإثنين 09:00–15:00، Slot 2 = الإثنين 15:00–21:00، … حتى Slot 14.
+// للمختبر: بعد إعادة تشغيل Backend قد تُمسح التوفرات القديمة — أعد اختبار التوفر.
+// =============================================================================
+
 using Backend.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Data.OleDb;
 
 namespace Backend.Services
 {
-    /// <summary>
-    /// Clears shifts/availabilities and seeds exactly 14 weekly slots (IDs restart from 1 when possible).
-    /// </summary>
     public static class ShiftBootstrap
     {
+        /// <summary>أول يوم في الأسبوع (الإثنين) — يُستخدم في كل استعلامات الأسبوع.</summary>
         public static DateTime GetWeekStart(DateTime? weekStart = null)
         {
             if (weekStart.HasValue)
@@ -19,6 +25,9 @@ namespace Backend.Services
             return today.AddDays(dayOfWeek == 0 ? -6 : dayOfWeek - 1).Date;
         }
 
+        /// <summary>
+        /// يمسح المناوبات/التوفر (إن forceReset) ويُدخل 14 مناوبة للأسبوع الحالي.
+        /// </summary>
         public static async Task ResetAndSeedCurrentWeekAsync(AppData db, string connectionString, bool forceReset = true)
         {
             var weekStart = GetWeekStart();
@@ -26,6 +35,7 @@ namespace Backend.Services
 
             if (forceReset)
             {
+                // تحذير للمختبر: هذا يحذف كل سجلات التوفر عند كل تشغيل كامل للسيرفر
                 try
                 {
                     await db.Database.ExecuteSqlRawAsync("DELETE FROM Availabilities");
