@@ -1,4 +1,5 @@
 using Backend.Models;
+using Backend.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Data.OleDb;
@@ -16,6 +17,24 @@ namespace Backend.Controllers
         {
             _db = db;
             _config = config;
+        }
+
+        private string GetOleDbConnectionString()
+        {
+            var connectionString = _config.GetConnectionString("ShiftlyConnection")
+                ?? "Data Source=C:\\Users\\aleen\\Documents\\ShiftlyDB.accdb";
+            if (!connectionString.Trim().Contains("Provider=", StringComparison.OrdinalIgnoreCase))
+                connectionString = "Provider=Microsoft.ACE.OLEDB.12.0;" + (connectionString.Trim().StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) ? connectionString.Trim() : "Data Source=" + connectionString.Trim()) + ";";
+            return connectionString;
+        }
+
+        /// <summary>Access YESNO is often stored as -1 (true) or 0 (false).</summary>
+        private static bool ReadAccessYesNo(object? value)
+        {
+            if (value == null || value == DBNull.Value) return false;
+            if (value is bool b) return b;
+            try { return Convert.ToInt32(value) != 0; }
+            catch { return Convert.ToBoolean(value); }
         }
 
         // GET: api/Availabilities
@@ -191,15 +210,13 @@ namespace Backend.Controllers
             using var conn = new OleDbConnection(connectionString);
             conn.Open();
 
-            // 1) Get employee StoreId
-            int storeId;
-            using (var cmd = conn.CreateCommand())
+            using (var empCheck = conn.CreateCommand())
             {
-                cmd.CommandText = "SELECT StoreId FROM Employees WHERE EmployeeId = ?";
-                cmd.Parameters.Add(new OleDbParameter("@p1", employeeId));
-                var o = cmd.ExecuteScalar();
-                if (o == null || o == DBNull.Value) return (null, "Employee not found", true);
-                storeId = Convert.ToInt32(o);
+                empCheck.CommandText = "SELECT EmployeeId FROM Employees WHERE EmployeeId = ?";
+                empCheck.Parameters.Add(new OleDbParameter("@p1", employeeId));
+                var empId = empCheck.ExecuteScalar();
+                if (empId == null || empId == DBNull.Value)
+                    return (null, "Employee not found", true);
             }
 
             var today = DateTime.Today;
@@ -208,41 +225,34 @@ namespace Backend.Controllers
             monday = monday.Date;
             var weekEnd = monday.AddDays(7);
 
-            // 2) Get shift ID for this store/slot/week (Access columns: Shift_ID, Shift_StoreID, Shift_SlotNumber, Shift_StartTime)
             int shiftId = 0;
             using (var cmd = conn.CreateCommand())
             {
                 cmd.CommandText = @"SELECT TOP 1 Shift_ID FROM Shifts 
-WHERE Shift_StoreID = ? AND Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ? AND Shift_ID > 0 
+WHERE Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ? AND Shift_ID > 0 
 ORDER BY Shift_StartTime";
-                cmd.Parameters.Add(new OleDbParameter("@p1", storeId));
-                cmd.Parameters.Add(new OleDbParameter("@p2", slotNumber));
-                cmd.Parameters.Add(new OleDbParameter("@p3", monday));
-                cmd.Parameters.Add(new OleDbParameter("@p4", weekEnd));
+                cmd.Parameters.Add(new OleDbParameter("@p1", slotNumber));
+                cmd.Parameters.Add(new OleDbParameter("@p2", monday));
+                cmd.Parameters.Add(new OleDbParameter("@p3", weekEnd));
                 var o = cmd.ExecuteScalar();
                 if (o == null || o == DBNull.Value)
                 {
-                    // No shifts for this week yet — create 14 shifts (Mon AM/PM ... Sun AM/PM) via OleDb, then retry
-                    EnsureFourteenShiftsForStoreOleDb(conn, storeId, monday);
-                    o = null;
-                    using (var retryCmd = conn.CreateCommand())
-                    {
-                        retryCmd.CommandText = @"SELECT TOP 1 Shift_ID FROM Shifts 
-WHERE Shift_StoreID = ? AND Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ? AND Shift_ID > 0 
+                    EnsureFourteenShiftsOleDb(conn, monday);
+                    using var retryCmd = conn.CreateCommand();
+                    retryCmd.CommandText = @"SELECT TOP 1 Shift_ID FROM Shifts 
+WHERE Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ? AND Shift_ID > 0 
 ORDER BY Shift_StartTime";
-                        retryCmd.Parameters.Add(new OleDbParameter("@p1", storeId));
-                        retryCmd.Parameters.Add(new OleDbParameter("@p2", slotNumber));
-                        retryCmd.Parameters.Add(new OleDbParameter("@p3", monday));
-                        retryCmd.Parameters.Add(new OleDbParameter("@p4", weekEnd));
-                        o = retryCmd.ExecuteScalar();
-                    }
+                    retryCmd.Parameters.Add(new OleDbParameter("@p1", slotNumber));
+                    retryCmd.Parameters.Add(new OleDbParameter("@p2", monday));
+                    retryCmd.Parameters.Add(new OleDbParameter("@p3", weekEnd));
+                    o = retryCmd.ExecuteScalar();
                 }
                 if (o == null || o == DBNull.Value)
                     return (null, $"No shift for slot {slotNumber} this week. Refresh the page.", true);
                 shiftId = Convert.ToInt32(o);
             }
 
-            Console.WriteLine($"[SetEmployeeAvailability] SlotNumber={slotNumber} -> ShiftId={shiftId} (StoreId={storeId})");
+            Console.WriteLine($"[SetEmployeeAvailability] SlotNumber={slotNumber} -> ShiftId={shiftId}");
 
             // 3) Ensure Availabilities table exists (try read; on failure create)
             try
@@ -294,11 +304,10 @@ ORDER BY Shift_StartTime";
                         SELECT TOP 1 a.AvailabilityID, a.ShiftId 
                         FROM Availabilities a
                         INNER JOIN Shifts s ON a.ShiftId = s.Shift_ID
-                        WHERE a.EmployeeId = ? AND s.Shift_SlotNumber = ? AND s.Shift_StoreID = ?
+                        WHERE a.EmployeeId = ? AND s.Shift_SlotNumber = ?
                         ORDER BY a.AvailabilityID DESC";
                     cmd.Parameters.Add(new OleDbParameter("@p1", employeeId));
                     cmd.Parameters.Add(new OleDbParameter("@p2", slotNumber));
-                    cmd.Parameters.Add(new OleDbParameter("@p3", storeId));
                     using var reader = cmd.ExecuteReader();
                     if (reader.Read())
                     {
@@ -393,7 +402,7 @@ ORDER BY Shift_StartTime";
         }
 
         /// <summary>Create 14 shifts for the store/week (Mon AM, Mon PM ... Sun AM, Sun PM) via OleDb. No EF = no #Dual.</summary>
-        private static void EnsureFourteenShiftsForStoreOleDb(OleDbConnection conn, int storeId, DateTime weekStart)
+        private static void EnsureFourteenShiftsOleDb(OleDbConnection conn, DateTime weekStart)
         {
             var weekEnd = weekStart.AddDays(7);
             for (int day = 0; day < 7; day++)
@@ -402,31 +411,27 @@ ORDER BY Shift_StartTime";
                 for (int part = 0; part < 2; part++)
                 {
                     int slotNum = day * 2 + part + 1;
-                    var start = date.AddHours(part == 0 ? 9 : 17);
-                    var end = date.AddHours(part == 0 ? 17 : 22);
+                    var start = date.AddHours(part == 0 ? 9 : 15);
+                    var end = date.AddHours(part == 0 ? 15 : 21);
                     object? existing = null;
                     using (var check = conn.CreateCommand())
                     {
                         check.CommandText = @"SELECT TOP 1 Shift_ID FROM Shifts 
-WHERE Shift_StoreID = ? AND Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ?";
-                        check.Parameters.Add(new OleDbParameter("@p1", storeId));
-                        check.Parameters.Add(new OleDbParameter("@p2", slotNum));
-                        check.Parameters.Add(new OleDbParameter("@p3", weekStart));
-                        check.Parameters.Add(new OleDbParameter("@p4", weekEnd));
+WHERE Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ?";
+                        check.Parameters.Add(new OleDbParameter("@p1", slotNum));
+                        check.Parameters.Add(new OleDbParameter("@p2", weekStart));
+                        check.Parameters.Add(new OleDbParameter("@p3", weekEnd));
                         existing = check.ExecuteScalar();
                     }
                     if (existing != null && existing != DBNull.Value)
                         continue;
-                    using (var ins = conn.CreateCommand())
-                    {
-                        ins.CommandText = @"INSERT INTO Shifts (Shift_StoreID, Shift_StartTime, Shift_EndTime, Shift_ReqThroughput, Shift_SlotNumber) VALUES (?, ?, ?, ?, ?)";
-                        ins.Parameters.Add(new OleDbParameter("@p1", storeId));
-                        ins.Parameters.Add(new OleDbParameter("@p2", start));
-                        ins.Parameters.Add(new OleDbParameter("@p3", end));
-                        ins.Parameters.Add(new OleDbParameter("@p4", (decimal)(part == 0 ? 2500 : 3500)));
-                        ins.Parameters.Add(new OleDbParameter("@p5", slotNum));
-                        ins.ExecuteNonQuery();
-                    }
+                    using var ins = conn.CreateCommand();
+                    ins.CommandText = @"INSERT INTO Shifts (Shift_StartTime, Shift_EndTime, Shift_ReqThroughput, Shift_SlotNumber) VALUES (?, ?, ?, ?)";
+                    ins.Parameters.Add(new OleDbParameter("@p1", start));
+                    ins.Parameters.Add(new OleDbParameter("@p2", end));
+                    ins.Parameters.Add(new OleDbParameter("@p3", (decimal)(part == 0 ? 2500 : 3500)));
+                    ins.Parameters.Add(new OleDbParameter("@p4", slotNum));
+                    ins.ExecuteNonQuery();
                 }
             }
         }
@@ -452,7 +457,7 @@ WHERE Shift_StoreID = ? AND Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Sh
                     return Ok(new List<object>()); // Return empty list if invalid slot
                 }
 
-                Console.WriteLine($"[GetEmployeesForShift] ShiftId={shiftId}, SlotNumber={slotNumber}, StoreId={shift.StoreId}");
+                Console.WriteLine($"[GetEmployeesForShift] ShiftId={shiftId}, SlotNumber={slotNumber}");
 
                 // CRITICAL: Match availability by SlotNumber, not just ShiftId
                 // This ensures availability persists even when shifts are recreated for a new week
@@ -483,11 +488,9 @@ WHERE Shift_StoreID = ? AND Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Sh
                         INNER JOIN Shifts s ON a.ShiftId = s.Shift_ID
                         INNER JOIN Employees e ON a.EmployeeId = e.EmployeeId
                         WHERE s.Shift_SlotNumber = ? 
-                          AND s.Shift_StoreID = ?
-                          AND a.IsAvailable = True
+                          AND (a.IsAvailable <> 0)
                         ORDER BY e.ProductivityScore DESC";
                     cmd.Parameters.Add(new System.Data.OleDb.OleDbParameter("@p1", slotNumber));
-                    cmd.Parameters.Add(new System.Data.OleDb.OleDbParameter("@p2", shift.StoreId));
                     
                     using var reader = await cmd.ExecuteReaderAsync();
                     while (await reader.ReadAsync())
@@ -508,7 +511,7 @@ WHERE Shift_StoreID = ? AND Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Sh
                     // Match by SlotNumber instead of just ShiftId
                     var availabilities = await _db.Availabilities
                         .Include(a => a.Employee)
-                        .Join(_db.Shifts.Where(s => s.SlotNumber == slotNumber && s.StoreId == shift.StoreId),
+                        .Join(_db.Shifts.Where(s => s.SlotNumber == slotNumber),
                             a => a.ShiftId,
                             s => s.ShiftId,
                             (a, s) => a)
@@ -569,9 +572,9 @@ WHERE Shift_StoreID = ? AND Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Sh
                         a.ShiftId,
                         ShiftInfo = a.Shift != null ? new
                         {
-                            StartTime = a.Shift.StartTime,
-                            EndTime = a.Shift.EndTime,
-                            StoreId = a.Shift.StoreId
+                            a.Shift.StartTime,
+                            a.Shift.EndTime,
+                            a.Shift.SlotNumber
                         } : null,
                         a.IsAvailable
                     })
@@ -766,7 +769,7 @@ WHERE Shift_StoreID = ? AND Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Sh
                         totalRecords++;
                         var availId = reader.GetInt32(0);
                         var shiftId = reader.GetInt32(1);
-                        var isAvailable = reader.GetBoolean(2);
+                        var isAvailable = ReadAccessYesNo(reader.GetValue(2));
                         var slotNum = reader.IsDBNull(3) ? (int?)null : reader.GetInt32(3);
                         
                         Console.WriteLine($"[GetAllAvailabilityForEmployee] Record {totalRecords}: AvailabilityId={availId}, ShiftId={shiftId}, IsAvailable={isAvailable}, SlotNumber={slotNum ?? -1}");
@@ -856,6 +859,100 @@ WHERE Shift_StoreID = ? AND Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Sh
             {
                 Console.WriteLine($"ג GetAllAvailabilityForEmployee: {ex.Message}");
                 return StatusCode(500, new { error = "Failed to get all availability for employee", message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Single call for the manager schedule: all employee slot maps + who is available per current-week shift.
+        /// </summary>
+        [HttpGet("manager-summary")]
+        public async Task<ActionResult<object>> GetManagerAvailabilitySummary([FromQuery] DateTime? weekStart = null)
+        {
+            try
+            {
+                var weekStartDate = ShiftBootstrap.GetWeekStart(weekStart);
+                var weekEnd = weekStartDate.AddDays(7);
+                var connStr = GetOleDbConnectionString();
+
+                var currentShifts = await _db.Shifts
+                    .Where(s => s.StartTime >= weekStartDate && s.StartTime < weekEnd
+                        && s.SlotNumber >= 1 && s.SlotNumber <= 14)
+                    .Select(s => new { s.ShiftId, Slot = s.SlotNumber ?? 0 })
+                    .OrderBy(s => s.Slot)
+                    .ToListAsync();
+
+                if (currentShifts.Count != 14)
+                {
+                    await ShiftBootstrap.ResetAndSeedCurrentWeekAsync(_db, connStr, forceReset: false);
+                    currentShifts = await _db.Shifts
+                        .Where(s => s.StartTime >= weekStartDate && s.StartTime < weekEnd
+                            && s.SlotNumber >= 1 && s.SlotNumber <= 14)
+                        .Select(s => new { s.ShiftId, Slot = s.SlotNumber ?? 0 })
+                        .OrderBy(s => s.Slot)
+                        .ToListAsync();
+                }
+
+                // employeeId -> slot -> latest IsAvailable
+                var latestByEmployeeSlot = new Dictionary<int, Dictionary<int, (int AvailId, bool IsAvailable)>>();
+
+                using (var conn = new OleDbConnection(connStr))
+                {
+                    await conn.OpenAsync();
+                    using var cmd = conn.CreateCommand();
+                    cmd.CommandText = @"
+                        SELECT a.EmployeeId, s.Shift_SlotNumber, a.IsAvailable, a.AvailabilityID
+                        FROM Availabilities a
+                        INNER JOIN Shifts s ON a.ShiftId = s.Shift_ID
+                        WHERE s.Shift_SlotNumber >= 1 AND s.Shift_SlotNumber <= 14
+                        ORDER BY a.EmployeeId, s.Shift_SlotNumber, a.AvailabilityID DESC";
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        var empId = reader.GetInt32(0);
+                        var slot = reader.GetInt32(1);
+                        var isAvail = ReadAccessYesNo(reader.GetValue(2));
+                        var availId = reader.GetInt32(3);
+
+                        if (!latestByEmployeeSlot.TryGetValue(empId, out var slots))
+                        {
+                            slots = new Dictionary<int, (int, bool)>();
+                            latestByEmployeeSlot[empId] = slots;
+                        }
+                        if (!slots.ContainsKey(slot))
+                            slots[slot] = (availId, isAvail);
+                    }
+                }
+
+                var byEmployee = new Dictionary<string, Dictionary<string, bool>>();
+                foreach (var (empId, slots) in latestByEmployeeSlot)
+                {
+                    var map = new Dictionary<string, bool>();
+                    for (int slot = 1; slot <= 14; slot++)
+                        map[slot.ToString()] = false;
+                    foreach (var (slot, entry) in slots)
+                        map[slot.ToString()] = entry.IsAvailable;
+                    byEmployee[empId.ToString()] = map;
+                }
+
+                var byShiftId = new Dictionary<string, List<int>>();
+                foreach (var shift in currentShifts)
+                {
+                    var available = new List<int>();
+                    foreach (var (empId, slots) in latestByEmployeeSlot)
+                    {
+                        if (slots.TryGetValue(shift.Slot, out var entry) && entry.IsAvailable)
+                            available.Add(empId);
+                    }
+                    byShiftId[shift.ShiftId.ToString()] = available;
+                }
+
+                Console.WriteLine($"[ManagerSummary] week={weekStartDate:yyyy-MM-dd}, employees={byEmployee.Count}, shifts={byShiftId.Count}");
+                return Ok(new { weekStart = weekStartDate, byEmployee, byShiftId });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ManagerSummary] ERROR: {ex.Message}");
+                return StatusCode(500, new { error = "Failed to load manager availability summary", message = ex.Message });
             }
         }
 
@@ -973,37 +1070,13 @@ WHERE Shift_StoreID = ? AND Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Sh
             }
         }
 
-        private async Task EnsureFourteenShiftsForStore(int storeId, DateTime weekStart)
+        private async Task EnsureFourteenShiftsForWeek(DateTime weekStart)
         {
             var weekEnd = weekStart.AddDays(7);
             var shiftsWithSlot = await _db.Shifts
-                .Where(s => s.StoreId == storeId && s.StartTime >= weekStart && s.StartTime < weekEnd && s.SlotNumber >= 1 && s.SlotNumber <= 14)
+                .Where(s => s.StartTime >= weekStart && s.StartTime < weekEnd && s.SlotNumber >= 1 && s.SlotNumber <= 14)
                 .CountAsync();
             if (shiftsWithSlot >= 14) return;
-
-            // If we have 14 shifts for the week but with null/wrong SlotNumber, assign 1-14 by StartTime order (avoids duplicate shifts)
-            var weekShifts = await _db.Shifts
-                .Where(s => s.StoreId == storeId && s.StartTime >= weekStart && s.StartTime < weekEnd)
-                .OrderBy(s => s.StartTime)
-                .ToListAsync();
-            if (weekShifts.Count >= 14)
-            {
-                bool needSave = false;
-                for (int i = 0; i < Math.Min(14, weekShifts.Count); i++)
-                {
-                    int wantSlot = i + 1;
-                    if (weekShifts[i].SlotNumber != wantSlot)
-                    {
-                        weekShifts[i].SlotNumber = wantSlot;
-                        needSave = true;
-                    }
-                }
-                if (needSave)
-                {
-                    await _db.SaveChangesAsync();
-                    return;
-                }
-            }
 
             for (int day = 0; day < 7; day++)
             {
@@ -1011,19 +1084,17 @@ WHERE Shift_StoreID = ? AND Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Sh
                 for (int part = 0; part < 2; part++)
                 {
                     int slotNumber = day * 2 + part + 1;
-                    var start = date.AddHours(part == 0 ? 9 : 17);
-                    var end = date.AddHours(part == 0 ? 17 : 22);
-                    var exists = await _db.Shifts.AnyAsync(s => s.StoreId == storeId && s.SlotNumber == slotNumber && s.StartTime >= weekStart && s.StartTime < weekEnd);
+                    var start = date.AddHours(part == 0 ? 9 : 15);
+                    var end = date.AddHours(part == 0 ? 15 : 21);
+                    var exists = await _db.Shifts.AnyAsync(s => s.SlotNumber == slotNumber && s.StartTime >= weekStart && s.StartTime < weekEnd);
                     if (exists) continue;
-                    var shift = new Shift
+                    _db.Shifts.Add(new Shift
                     {
-                        StoreId = storeId,
                         SlotNumber = slotNumber,
                         StartTime = start,
                         EndTime = end,
                         RequiredProductivity = part == 0 ? 2500 : 3500
-                    };
-                    _db.Shifts.Add(shift);
+                    });
                 }
             }
             await _db.SaveChangesAsync();

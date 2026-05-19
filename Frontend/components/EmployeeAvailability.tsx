@@ -3,8 +3,6 @@ import React, { useState, useEffect, useRef } from 'react';
 interface Shift {
   shiftId: number;
   slotNumber: number; // SlotNumber 1-14 (Monday Morning=1, Monday Afternoon=2, ..., Sunday Afternoon=14)
-  storeId: number;
-  storeName?: string;
   startTime: string;
   endTime: string;
   requiredProductivity: number;
@@ -17,8 +15,6 @@ interface User {
   userId: number;
   fullName: string;
   email: string;
-  storeId: number;
-  storeName?: string;
 }
 
 interface EmployeeAvailabilityProps {
@@ -114,7 +110,7 @@ const EmployeeAvailability: React.FC<EmployeeAvailabilityProps> = ({ user }) => 
       // Format week start as ISO string
       const weekStartISO = currentWeekStart.toISOString();
       
-      const response = await fetch(`/api/shifts?storeId=${user.storeId}&weekStart=${weekStartISO}`, {
+      const response = await fetch(`/api/shifts?weekStart=${weekStartISO}`, {
         credentials: 'include'
       });
 
@@ -140,8 +136,6 @@ const EmployeeAvailability: React.FC<EmployeeAvailabilityProps> = ({ user }) => 
         return {
           shiftId: Number(shiftId), // Actual Shift_ID from database
           slotNumber: Number(slotNumber), // SlotNumber 1-14 for organization
-          storeId: s.StoreId || s.storeId,
-          storeName: s.StoreName || s.storeName,
           startTime: s.StartTime || s.startTime,
           endTime: s.EndTime || s.endTime,
           requiredProductivity: s.RequiredProductivity || s.requiredProductivity,
@@ -204,13 +198,12 @@ const EmployeeAvailability: React.FC<EmployeeAvailabilityProps> = ({ user }) => 
     console.log('═══════════════════════════════════════════════════════');
     console.log('🔄 PAGE LOAD/REFRESH: Fetching shifts and availability from Access database...');
     console.log(`  Employee ID: ${user.userId}`);
-    console.log(`  Store ID: ${user.storeId}`);
     console.log(`  Week Start: ${currentWeekStart.toISOString()}`);
     console.log('═══════════════════════════════════════════════════════');
 
     // Single flow: load shifts and availability. Employee sets which shifts they're available for (one record per shift).
     fetchShifts();
-  }, [currentWeekStart, user.storeId, user.userId]);
+  }, [currentWeekStart, user.userId]);
 
   // Also fetch when page becomes visible again (user returns to tab)
   useEffect(() => {
@@ -226,7 +219,7 @@ const EmployeeAvailability: React.FC<EmployeeAvailabilityProps> = ({ user }) => 
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [currentWeekStart, user.storeId, user.userId]);
+  }, [currentWeekStart, user.userId]);
 
   // Track pending saves to prevent race conditions
   const pendingSavesRef = useRef<Set<number>>(new Set());
@@ -429,7 +422,7 @@ const EmployeeAvailability: React.FC<EmployeeAvailabilityProps> = ({ user }) => 
                   }
                   try {
                     setLoading(true);
-                    const response = await fetch(`/api/shifts/reinitialize?storeId=${user.storeId}`, {
+                    const response = await fetch(`/api/shifts/reinitialize`, {
                       method: 'POST',
                       credentials: 'include'
                     });
@@ -463,7 +456,7 @@ const EmployeeAvailability: React.FC<EmployeeAvailabilityProps> = ({ user }) => 
                   }
                   try {
                     setLoading(true);
-                    const response = await fetch(`/api/shifts/cleanup?storeId=${user.storeId}`, {
+                    const response = await fetch(`/api/shifts/cleanup`, {
                       method: 'POST',
                       credentials: 'include'
                     });
@@ -604,9 +597,6 @@ const EmployeeAvailability: React.FC<EmployeeAvailabilityProps> = ({ user }) => 
                                 <p className="font-bold text-slate-800 text-sm">
                                   {formatTime(shift.startTime)} - {formatTime(shift.endTime)}
                                 </p>
-                                {shift.storeName && (
-                                  <p className="text-xs text-slate-500 mt-1">{shift.storeName}</p>
-                                )}
                               </div>
                               <button
                                 onClick={() => {

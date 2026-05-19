@@ -12,21 +12,15 @@ namespace Backend.Models
         [StringLength(100)]
         public string FirstName { get; set; } = string.Empty;
 
-        // Access Employees table does NOT have LastName column
         [NotMapped]
         public string LastName { get; set; } = string.Empty;
 
         [Range(0, double.MaxValue)]
         public decimal HourlyWage { get; set; }
 
-        // 0-10 productivity score, higher is better
         [Range(0, 10)]
         public double ProductivityScore { get; set; }
 
-        public int StoreId { get; set; }
-        public Store? Store { get; set; }
-
-        // Login credentials for employees
         [StringLength(200)]
         public string? Email { get; set; }
 
@@ -37,5 +31,3 @@ namespace Backend.Models
         public ICollection<Shift> Shifts { get; set; } = new List<Shift>();
     }
 }
-
-

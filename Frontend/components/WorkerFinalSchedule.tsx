@@ -13,14 +13,13 @@ interface Shift {
 interface WorkerFinalScheduleProps {
   userName: string;
   userId: number;
-  storeId: number;
 }
 
 import { DAYS } from '../constants';
 
 const DAYS_OF_WEEK = DAYS;
 
-const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, userId, storeId }) => {
+const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, userId }) => {
   const [insights, setInsights] = useState<string | null>(null);
   const [loadingInsights, setLoadingInsights] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
@@ -43,11 +42,9 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
   // Fetch publish status (so we can show "Schedule shared by manager")
   // Poll more frequently so workers see updates when manager publishes
   useEffect(() => {
-    if (!storeId) return;
-    
     const fetchPublishStatus = () => {
       const monday = getCurrentWeekStart();
-      fetch(`/api/schedule/publish/status?storeId=${storeId}&weekStart=${monday.toISOString()}`, { credentials: 'include' })
+      fetch(`/api/schedule/publish/status?weekStart=${monday.toISOString()}`, { credentials: 'include' })
         .then(res => res.ok ? res.json() : null)
         .then(data => {
           if (data && data.published !== undefined) {
@@ -78,7 +75,7 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
     const interval = setInterval(fetchPublishStatus, 30 * 1000);
     
     return () => clearInterval(interval);
-  }, [storeId]); // Only depend on storeId - ref handles previous state
+  }, []);
 
   // Map raw API shift to our Shift format
   const mapShift = (s: any): Shift => {
@@ -103,13 +100,10 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
   // Poll more frequently so workers see their schedule updates immediately
   useEffect(() => {
     const fetchShifts = async () => {
-      if (!userId || !storeId) {
-        console.log('WorkerFinalSchedule: Missing userId or storeId', { userId, storeId });
-        return;
-      }
+      if (!userId) return;
       try {
         setLoading(true);
-        const url = `/api/shifts/for-employee?employeeId=${Number(userId)}&storeId=${Number(storeId)}`;
+        const url = `/api/shifts/for-employee?employeeId=${Number(userId)}`;
         console.log('WorkerFinalSchedule: Fetching shifts from', url);
         
         const res = await fetch(url, { credentials: 'include', cache: 'no-cache' });
@@ -143,7 +137,7 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
         console.log('WorkerFinalSchedule: Total shifts in response:', allRaw.length);
         
         if (allRaw.length === 0) {
-          console.log('WorkerFinalSchedule: No shifts assigned for employeeId=', userId, 'storeId=', storeId);
+          console.log('WorkerFinalSchedule: No shifts assigned for employeeId=', userId);
         }
         console.log('WorkerFinalSchedule: ========================================');
         
@@ -244,11 +238,10 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
             });
           });
         } else {
-          console.warn('WorkerFinalSchedule: No shifts returned from API for employeeId=', userId, 'storeId=', storeId);
+          console.warn('WorkerFinalSchedule: No shifts returned from API for employeeId=', userId);
           console.warn('WorkerFinalSchedule: This could mean:');
           console.warn('  1. No shifts have been assigned to this employee yet');
           console.warn('  2. The employeeId does not match any assigned shifts');
-          console.warn('  3. The shifts are in a different store');
         }
         
         // Filter shifts - use wide buffer to catch all relevant shifts
@@ -291,7 +284,7 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
       clearInterval(interval);
       window.removeEventListener('schedulePublished', handleSchedulePublished);
     };
-  }, [userId, userName, storeId]); // Only depend on userId, userName, storeId - interval handles week changes
+  }, [userId, userName]);
 
   useEffect(() => {
     if (shifts.length > 0) {

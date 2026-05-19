@@ -5,18 +5,10 @@ interface BackendUser {
   email: string;
   fullName: string;
   password?: string;
-  storeId: number;
-  storeName?: string;
-}
-
-interface Store {
-  storeId: number;
-  name: string;
 }
 
 const UserManagement: React.FC = () => {
   const [users, setUsers] = useState<BackendUser[]>([]);
-  const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -24,8 +16,7 @@ const UserManagement: React.FC = () => {
   const [formData, setFormData] = useState({
     email: '',
     fullName: '',
-    password: '',
-    storeId: 1
+    password: ''
   });
 
   // Fetch users from backend
@@ -54,8 +45,6 @@ const UserManagement: React.FC = () => {
         userId: user.UserId || user.userId,
         email: user.Email || user.email,
         fullName: user.FullName || user.fullName,
-        storeId: user.StoreId || user.storeId,
-        storeName: user.StoreName || user.storeName
       }));
       
       setUsers(mappedUsers);
@@ -69,41 +58,15 @@ const UserManagement: React.FC = () => {
     }
   };
 
-  // Fetch stores from backend
-  const fetchStores = async () => {
-    try {
-      const response = await fetch('/api/stores', {
-        credentials: 'include'
-      });
-      if (response.ok) {
-        const data = await response.json();
-        // Map backend response to frontend format
-        const mappedStores = data.map((s: any) => ({
-          storeId: s.StoreId || s.storeId,
-          name: s.Name || s.name
-        }));
-        setStores(mappedStores);
-        if (mappedStores.length > 0 && !formData.storeId) {
-          setFormData(prev => ({ ...prev, storeId: mappedStores[0].storeId }));
-        }
-      }
-    } catch (err) {
-      console.error('Error fetching stores:', err);
-    }
-  };
-
   useEffect(() => {
     fetchUsers();
-    fetchStores();
   }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: name === 'storeId' 
-        ? parseFloat(value) || 0 
-        : value
+      [name]: value
     }));
   };
 
@@ -125,8 +88,7 @@ const UserManagement: React.FC = () => {
         body: JSON.stringify({
           email: formData.email,
           fullName: formData.fullName,
-          password: formData.password,
-          storeId: formData.storeId
+          password: formData.password
         }),
       });
 
@@ -158,8 +120,7 @@ const UserManagement: React.FC = () => {
     setFormData({
       email: user.email,
       fullName: user.fullName,
-      password: '', // Don't show password when editing
-      storeId: user.storeId
+      password: '' // Don't show password when editing
     });
     setShowForm(true);
   };
@@ -195,8 +156,7 @@ const UserManagement: React.FC = () => {
     setFormData({
       email: '',
       fullName: '',
-      password: '',
-      storeId: stores.length > 0 ? stores[0].storeId : 1
+      password: ''
     });
     setEditingUser(null);
     setShowForm(false);
@@ -300,25 +260,6 @@ const UserManagement: React.FC = () => {
                   )}
                 </div>
 
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">
-                    Store *
-                  </label>
-                  <select
-                    name="storeId"
-                    value={formData.storeId}
-                    onChange={handleInputChange}
-                    required
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  >
-                    {stores.map(store => (
-                      <option key={store.storeId} value={store.storeId}>
-                        {store.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
                 <div className="flex space-x-3 pt-4">
                   <button
                     type="submit"
@@ -368,7 +309,6 @@ const UserManagement: React.FC = () => {
                   <tr>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Name</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Email</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Store</th>
                     <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
@@ -382,11 +322,6 @@ const UserManagement: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 text-slate-600">
                         {user.email}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-slate-600">
-                          {user.storeName || `Store #${user.storeId}`}
-                        </span>
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end space-x-2">

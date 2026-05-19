@@ -1,4 +1,5 @@
 using Backend.Models;
+using Backend.Services;
 using EntityFrameworkCore.Jet;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Diagnostics;
@@ -117,8 +118,7 @@ namespace Backend
                                                 UserId AUTOINCREMENT PRIMARY KEY,
                                                 Email TEXT(200) NOT NULL,
                                                 FullName TEXT(100) NOT NULL,
-                                                Password TEXT(200) NOT NULL,
-                                                StoreId INTEGER NOT NULL
+                                                Password TEXT(200) NOT NULL
                                             )
                                         ");
                                         Console.WriteLine("✓ Created Users table manually");
@@ -131,103 +131,34 @@ namespace Backend
                             }
                         }
                         
-                        // Seed stores if database is empty (best effort)
                         try
                         {
-                            var storeCount = await db.Stores.CountAsync();
-                            if (storeCount == 0)
+                            if (!await db.Users.AnyAsync())
                             {
-                                var stores = new List<Store>
-                                {
-                                    new Store { Name = "Foot Locker - Times Square", Location = "Times Square, New York, NY", HourlySalesTarget = 5000, HourlyLaborBudget = 500 },
-                                    new Store { Name = "Foot Locker - Fifth Avenue", Location = "Fifth Avenue, New York, NY", HourlySalesTarget = 4500, HourlyLaborBudget = 450 },
-                                    new Store { Name = "Foot Locker - Brooklyn", Location = "Brooklyn, NY", HourlySalesTarget = 3500, HourlyLaborBudget = 350 },
-                                    new Store { Name = "Foot Locker - Queens", Location = "Queens, NY", HourlySalesTarget = 3000, HourlyLaborBudget = 300 },
-                                    new Store { Name = "Foot Locker - Manhattan", Location = "Manhattan, NY", HourlySalesTarget = 4000, HourlyLaborBudget = 400 }
-                                };
-                                
-                                db.Stores.AddRange(stores);
-                                await db.SaveChangesAsync();
-                                Console.WriteLine($"✓ Seeded {stores.Count} stores");
-                            }
-                            else
-                            {
-                                Console.WriteLine($"✓ Found {storeCount} existing store(s)");
-                            }
-                        }
-                        catch (Exception seedEx)
-                        {
-                            Console.WriteLine($"⚠ Store seeding warning: {seedEx.Message}");
-                            // Continue anyway - might be locked or other issue
-                        }
-
-                        // Seed default manager user if none exists
-                        try
-                        {
-                            var userCount = await db.Users.CountAsync();
-                            Console.WriteLine($"Current user count: {userCount}");
-                            
-                            if (userCount == 0)
-                            {
-                                // Get first store for the manager (or create one if none exist)
-                                var firstStore = await db.Stores.FirstOrDefaultAsync();
-                                int storeId;
-                                
-                                if (firstStore == null)
-                                {
-                                    // Create a default store if none exists
-                                    var defaultStore = new Store
-                                    {
-                                        Name = "Default Store",
-                                        Location = "Default Location",
-                                        HourlySalesTarget = 3000,
-                                        HourlyLaborBudget = 300
-                                    };
-                                    db.Stores.Add(defaultStore);
-                                    await db.SaveChangesAsync();
-                                    storeId = defaultStore.StoreId;
-                                    Console.WriteLine($"✓ Created default store (ID: {storeId}) for manager");
-                                }
-                                else
-                                {
-                                    storeId = firstStore.StoreId;
-                                }
-                                
-                                var defaultManager = new User
+                                db.Users.Add(new User
                                 {
                                     Email = "manager@shiftly.com",
                                     FullName = "Default Manager",
-                                    Password = "manager123", // Default password
-                                    StoreId = storeId
-                                };
-                                
-                                db.Users.Add(defaultManager);
+                                    Password = "manager123"
+                                });
                                 await db.SaveChangesAsync();
-                                Console.WriteLine("✓ Created default manager user");
-                                Console.WriteLine("   Email: manager@shiftly.com");
-                                Console.WriteLine("   Password: manager123");
-                                Console.WriteLine($"   StoreId: {storeId}");
-                            }
-                            else
-                            {
-                                // Check if manager exists
-                                var manager = await db.Users.FirstOrDefaultAsync(u => u.Email == "manager@shiftly.com");
-                                if (manager != null)
-                                {
-                                    Console.WriteLine($"✓ Manager user already exists (ID: {manager.UserId})");
-                                }
-                                else
-                                {
-                                    Console.WriteLine("⚠ Manager user not found, but other users exist");
-                                }
+                                Console.WriteLine("✓ Created default manager (manager@shiftly.com / manager123)");
                             }
                         }
                         catch (Exception managerEx)
                         {
-                            Console.WriteLine($"⚠ Manager seeding error: {managerEx.Message}");
-                            Console.WriteLine($"⚠ Stack trace: {managerEx.StackTrace}");
+                            Console.WriteLine($"⚠ Manager seeding warning: {managerEx.Message}");
                         }
-                        
+
+                        try
+                        {
+                            await ShiftBootstrap.ResetAndSeedCurrentWeekAsync(db, connectionString, forceReset: true);
+                        }
+                        catch (Exception shiftEx)
+                        {
+                            Console.WriteLine($"⚠ Shift bootstrap warning: {shiftEx.Message}");
+                        }
+
                         Console.WriteLine("✓ Database connection successful");
                     }
                     else

@@ -8,8 +8,6 @@ interface User {
   userId: number;
   fullName: string;
   email: string;
-  storeId: number;
-  storeName?: string;
 }
 
 interface WorkerPortalProps {
@@ -42,10 +40,10 @@ const WorkerPortal: React.FC<WorkerPortalProps> = ({ user, onLogout }) => {
   // Check for week changes periodically
   useEffect(() => {
     const fetchStats = async () => {
-      if (!user.userId || !user.storeId) return;
+      if (!user.userId) return;
       try {
         const shiftsResponse = await fetch(
-          `/api/shifts/for-employee?employeeId=${user.userId}&storeId=${user.storeId}`,
+          `/api/shifts/for-employee?employeeId=${user.userId}`,
           { credentials: 'include', cache: 'no-cache' }
         );
         if (shiftsResponse.ok) {
@@ -96,7 +94,7 @@ const WorkerPortal: React.FC<WorkerPortalProps> = ({ user, onLogout }) => {
     const interval = setInterval(fetchStats, 60 * 60 * 1000); // Check every hour
     
     return () => clearInterval(interval);
-  }, [user.userId, user.storeId]); // Only depend on userId and storeId - interval handles week changes
+  }, [user.userId]);
 
   return (
     <div className="min-h-screen pb-12" style={{
@@ -149,7 +147,7 @@ const WorkerPortal: React.FC<WorkerPortalProps> = ({ user, onLogout }) => {
             {activeTab === 'availability' ? (
               <WorkerAvailabilityPicker userId={user.userId} />
             ) : (
-              <WorkerFinalSchedule userName={user.fullName} userId={user.userId} storeId={user.storeId} />
+              <WorkerFinalSchedule userName={user.fullName} userId={user.userId} />
             )}
           </div>
 

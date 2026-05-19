@@ -17,6 +17,7 @@ export interface Shift {
   type: 'Morning' | 'Afternoon' | 'Evening';
   targetSales: number;
   assignedEmployeeId: string | null;
+  slotNumber?: number;
 }
 
 export interface ScheduleKPIs {

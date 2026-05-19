@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 
 type StatusResponse =
   | {
-      stores: number;
       users: number;
       employees: number;
       shifts: number;
@@ -13,7 +12,7 @@ type StatusResponse =
     };
 
 function isCounts(res: StatusResponse): res is Exclude<StatusResponse, { message: string }> {
-  return (res as any).stores !== undefined;
+  return (res as any).employees !== undefined;
 }
 
 function App() {
@@ -65,10 +64,6 @@ function App() {
                   <p>The backend is online and connected to the database.</p>
                   <div className="grid">
                     <div className="metric">
-                      <span className="label">Stores</span>
-                      <span className="value">{status.stores}</span>
-                    </div>
-                    <div className="metric">
                       <span className="label">Managers</span>
                       <span className="value">{status.users}</span>
                     </div>
@@ -96,7 +91,7 @@ function App() {
         <section className="card">
           <h2>Next steps</h2>
           <ul className="list">
-            <li>Create views to manage Stores, Employees and Shifts</li>
+            <li>Create views to manage Employees and Shifts</li>
             <li>Add authentication for store managers</li>
             <li>Implement the Match Score scheduling algorithm</li>
           </ul>

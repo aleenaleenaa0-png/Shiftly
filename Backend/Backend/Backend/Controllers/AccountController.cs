@@ -101,8 +101,7 @@ namespace Backend.Controllers
                                         UserId AUTOINCREMENT PRIMARY KEY,
                                         Email TEXT(200) NOT NULL,
                                         FullName TEXT(100) NOT NULL,
-                                        Password TEXT(200) NOT NULL,
-                                        StoreId INTEGER NOT NULL
+                                        Password TEXT(200) NOT NULL
                                     )
                                 ");
                                 Console.WriteLine("✓ Created Users table");
@@ -140,19 +139,6 @@ namespace Backend.Controllers
                     }
                     
                     // If found, get store name separately (safely)
-                    if (user != null)
-                    {
-                        try
-                        {
-                            var store = await _db.Stores.FindAsync(user.StoreId);
-                            user.Store = store;
-                        }
-                        catch (Exception storeEx)
-                        {
-                            Console.WriteLine($"⚠ Could not load store for user: {storeEx.Message}");
-                            // Continue without store - user can still log in
-                        }
-                    }
                 }
                 catch (Exception userEx)
                 {
@@ -179,53 +165,16 @@ namespace Backend.Controllers
                     Console.WriteLine("Manager credentials detected but user doesn't exist. Creating manager user...");
                     try
                     {
-                        // Get or create a store
-                        var firstStore = await _db.Stores.OrderBy(s => s.StoreId).FirstOrDefaultAsync();
-                        int storeId;
-                        
-                        if (firstStore == null)
-                        {
-                            // Create a default store
-                            var defaultStore = new Store
-                            {
-                                Name = "Default Store",
-                                Location = "Default Location",
-                                HourlySalesTarget = 3000,
-                                HourlyLaborBudget = 300
-                            };
-                            _db.Stores.Add(defaultStore);
-                            await _db.SaveChangesAsync();
-                            storeId = defaultStore.StoreId;
-                            Console.WriteLine($"✓ Created default store (ID: {storeId}) for manager");
-                        }
-                        else
-                        {
-                            storeId = firstStore.StoreId;
-                        }
-
-                        // Create manager user
                         user = new User
                         {
                             Email = "manager@shiftly.com",
                             FullName = "Default Manager",
-                            Password = "manager123",
-                            StoreId = storeId
+                            Password = "manager123"
                         };
 
                         _db.Users.Add(user);
                         await _db.SaveChangesAsync();
                         Console.WriteLine($"✓ Created manager user - Email: {user.Email}, ID: {user.UserId}");
-                        
-                        // Load store for the user
-                        try
-                        {
-                            var store = await _db.Stores.FindAsync(user.StoreId);
-                            user.Store = store;
-                        }
-                        catch (Exception storeEx)
-                        {
-                            Console.WriteLine($"⚠ Could not load store for user: {storeEx.Message}");
-                        }
                     }
                     catch (Exception createEx)
                     {
@@ -251,7 +200,6 @@ namespace Backend.Controllers
                         new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()),
                         new Claim(ClaimTypes.Name, user.FullName),
                         new Claim(ClaimTypes.Email, user.Email),
-                        new Claim("StoreId", user.StoreId.ToString()),
                         new Claim(ClaimTypes.Role, "Manager"),
                         new Claim("UserType", "Manager")
                     };
@@ -277,8 +225,6 @@ namespace Backend.Controllers
                             userId = user.UserId,
                             fullName = user.FullName,
                             email = user.Email,
-                            storeId = user.StoreId,
-                            storeName = user.Store?.Name,
                             role = "Manager",
                             userType = "Manager"
                         }
@@ -327,19 +273,6 @@ namespace Backend.Controllers
                             .OrderBy(e => e.EmployeeId)
                         .FirstOrDefault();
                     
-                    if (employee != null)
-                    {
-                        // Load store
-                        try
-                        {
-                            var store = await _db.Stores.FindAsync(employee.StoreId);
-                            employee.Store = store;
-                        }
-                        catch (Exception storeEx)
-                        {
-                                // Store load failed - continue anyway
-                        }
-                    }
                 }
                 catch (Exception empEx)
                 {
@@ -362,7 +295,6 @@ namespace Backend.Controllers
                         new Claim(ClaimTypes.NameIdentifier, employee.EmployeeId.ToString()),
                         new Claim(ClaimTypes.Name, employee.FirstName ?? ""), // No LastName in Access
                         new Claim(ClaimTypes.Email, employee.Email ?? ""),
-                        new Claim("StoreId", employee.StoreId.ToString()),
                         new Claim(ClaimTypes.Role, "Employee"),
                         new Claim("UserType", "Employee")
                     };
@@ -387,8 +319,6 @@ namespace Backend.Controllers
                             userId = employee.EmployeeId,
                             fullName = employee.FirstName.Trim(), // Username is stored in FirstName
                             email = employee.Email,
-                            storeId = employee.StoreId,
-                            storeName = employee.Store?.Name,
                             role = "Employee",
                             userType = "Employee"
                         }
@@ -466,7 +396,7 @@ namespace Backend.Controllers
             try
             {
                 // Log received data for debugging
-                Console.WriteLine($"SignUp received - Email: {signUpDto?.Email}, Username: {signUpDto?.Username}, StoreId: {signUpDto?.StoreId}");
+                Console.WriteLine($"SignUp received - Email: {signUpDto?.Email}, Username: {signUpDto?.Username}");
 
                 if (signUpDto == null)
                 {
@@ -484,18 +414,13 @@ namespace Backend.Controllers
                     return BadRequest(new { error = "Password is required" });
                 }
 
-                if (signUpDto.StoreId <= 0)
-                {
-                    return BadRequest(new { error = $"Please select a store. Received StoreId: {signUpDto.StoreId}" });
-                }
-
                 // Ensure Users table exists - use same approach as Stores table
                 try
                 {
                     // Try to query the table to see if it exists with correct schema
                     var testUser = await _db.Users
                         .OrderBy(u => u.UserId)
-                        .Select(u => new { u.UserId, u.Email, u.FullName, u.Password, u.StoreId })
+                        .Select(u => new { u.UserId, u.Email, u.FullName, u.Password })
                         .FirstOrDefaultAsync();
                     Console.WriteLine("✓ Users table exists with correct schema");
                 }
@@ -525,8 +450,7 @@ namespace Backend.Controllers
                                 UserId AUTOINCREMENT PRIMARY KEY,
                                 Email TEXT(200) NOT NULL,
                                 FullName TEXT(100) NOT NULL,
-                                Password TEXT(200) NOT NULL,
-                                StoreId INTEGER NOT NULL
+                                Password TEXT(200) NOT NULL
                             )
                         ");
                         Console.WriteLine("✓ Created Users table successfully");
@@ -559,14 +483,7 @@ namespace Backend.Controllers
                     }
                 }
 
-                // Verify store exists FIRST (before any employee operations)
-                var store = await _db.Stores.FindAsync(signUpDto.StoreId);
-                if (store == null)
-                {
-                    return BadRequest(new { error = $"Invalid store ID: {signUpDto.StoreId}. Please select a valid store." });
-                }
-
-                // Access Employees table structure: EmployeeId, FirstName, HourlyWage, ProductivityScore, StoreId, Email
+                // Access Employees table structure: EmployeeId, FirstName, HourlyWage, ProductivityScore, Email, Password
                 // NO LastName, NO Password columns
                 // Check if Email column exists (it should exist in Access)
                 bool emailColumnExists = false;
@@ -724,8 +641,6 @@ namespace Backend.Controllers
                 Console.WriteLine($"Email: '{signUpDto.Email?.Trim()}' (Length: {signUpDto.Email?.Trim()?.Length ?? 0}, IsNullOrEmpty: {string.IsNullOrEmpty(signUpDto.Email?.Trim())})");
                 Console.WriteLine($"HourlyWage: 0 (Type: {0m.GetType().Name})");
                 Console.WriteLine($"ProductivityScore: 5.0 (Type: {5.0.GetType().Name})");
-                Console.WriteLine($"StoreId: {signUpDto.StoreId} (Type: {signUpDto.StoreId.GetType().Name}, IsValid: {signUpDto.StoreId > 0})");
-                Console.WriteLine("═══════════════════════════════════════════════════════");
                 Console.WriteLine("═══════════════════════════════════════════════════════");
 
                 // Validate all required parameters
@@ -738,9 +653,6 @@ namespace Backend.Controllers
                     validationErrors.Add("Password is required and cannot be empty");
                 if (password.Length < 3)
                     validationErrors.Add("Password must be at least 3 characters");
-                if (signUpDto.StoreId <= 0)
-                    validationErrors.Add($"StoreId must be greater than 0 (received: {signUpDto.StoreId})");
-
                 if (validationErrors.Any())
                 {
                     var errorMsg = "Validation failed: " + string.Join("; ", validationErrors);
@@ -767,7 +679,6 @@ namespace Backend.Controllers
                                 e.FirstName, 
                                 e.HourlyWage, 
                                 e.ProductivityScore, 
-                                e.StoreId,
                                 e.Email,
                                 e.Password
                             })
@@ -790,7 +701,7 @@ namespace Backend.Controllers
                     // Continue - table might already exist
                 }
 
-                Console.WriteLine($"Creating employee - Email: {signUpDto.Email.Trim()}, Username: {username}, StoreId: {signUpDto.StoreId}");
+                Console.WriteLine($"Creating employee - Email: {signUpDto.Email.Trim()}, Username: {username}");
 
                 // Strategy: Always insert WITHOUT Email/Password first (these columns may not exist)
                 // Then add the columns if needed, then update the employee with Email/Password
@@ -801,7 +712,6 @@ namespace Backend.Controllers
                 Console.WriteLine($"  FirstName: '{firstName}'");
                 Console.WriteLine($"  HourlyWage: 0");
                 Console.WriteLine($"  ProductivityScore: 5.0");
-                Console.WriteLine($"  StoreId: {signUpDto.StoreId}");
                 Console.WriteLine($"  Email: '{signUpDto.Email.Trim()}'");
                 Console.WriteLine("═══════════════════════════════════════════════════════");
                 Console.WriteLine("═══════════════════════════════════════════════════════");
@@ -811,7 +721,6 @@ namespace Backend.Controllers
                     FirstName = firstName,
                     HourlyWage = 0m,
                     ProductivityScore = 5.0,
-                    StoreId = signUpDto.StoreId,
                     Email = signUpDto.Email.Trim(),
                     Password = password
                 };
@@ -849,7 +758,6 @@ namespace Backend.Controllers
 
                 // Fetch the final employee data
                 var finalEmployee = await _db.Employees
-                    .Include(e => e.Store)
                     .FirstOrDefaultAsync(e => e.EmployeeId == newEmployeeId);
                 
                 if (finalEmployee == null)
@@ -866,8 +774,6 @@ namespace Backend.Controllers
                         userId = finalEmployee.EmployeeId,
                         fullName = finalEmployee.FirstName.Trim(), // Username is stored in FirstName
                         email = finalEmployee.Email ?? signUpDto.Email.Trim(),
-                        storeId = finalEmployee.StoreId,
-                        storeName = finalEmployee.Store?.Name ?? store.Name,
                         role = "Employee",
                         userType = "Employee"
                     }
@@ -935,43 +841,15 @@ namespace Backend.Controllers
                     });
                 }
 
-                // Get or create a store
-                var firstStore = await _db.Stores.OrderBy(s => s.StoreId).FirstOrDefaultAsync();
-                int storeId;
-                
-                if (firstStore == null)
-                {
-                    // Create a default store
-                    var defaultStore = new Store
-                    {
-                        Name = "Default Store",
-                        Location = "Default Location",
-                        HourlySalesTarget = 3000,
-                        HourlyLaborBudget = 300
-                    };
-                    _db.Stores.Add(defaultStore);
-                    await _db.SaveChangesAsync();
-                    storeId = defaultStore.StoreId;
-                    Console.WriteLine($"✓ Created default store (ID: {storeId}) for manager");
-                }
-                else
-                {
-                    storeId = firstStore.StoreId;
-                }
-
-                // Create manager user
                 var manager = new User
                 {
                     Email = "manager@shiftly.com",
                     FullName = "Default Manager",
-                    Password = "manager123",
-                    StoreId = storeId
+                    Password = "manager123"
                 };
 
                 _db.Users.Add(manager);
                 await _db.SaveChangesAsync();
-
-                Console.WriteLine($"✓ Created manager user - Email: {manager.Email}, ID: {manager.UserId}");
 
                 return Ok(new
                 {
@@ -982,8 +860,7 @@ namespace Backend.Controllers
                         userId = manager.UserId,
                         email = manager.Email,
                         fullName = manager.FullName,
-                        password = "manager123",
-                        storeId = manager.StoreId
+                        password = "manager123"
                     }
                 });
             }
@@ -1024,7 +901,7 @@ namespace Backend.Controllers
                 }
                 
                 // Test 2: Try to query each column individually
-                var columnsToTest = new[] { "EmployeeId", "FirstName", "LastName", "HourlyWage", "ProductivityScore", "StoreId", "Email", "Password" };
+                var columnsToTest = new[] { "EmployeeId", "FirstName", "LastName", "HourlyWage", "ProductivityScore", "Email", "Password" };
                 var columnResults = new Dictionary<string, object>();
                 
                 foreach (var column in columnsToTest)
@@ -1049,9 +926,6 @@ namespace Backend.Controllers
                                 break;
                             case "ProductivityScore":
                                 testQuery = await _db.Employees.Select(e => e.ProductivityScore).Take(1).ToListAsync();
-                                break;
-                            case "StoreId":
-                                testQuery = await _db.Employees.Select(e => e.StoreId).Take(1).ToListAsync();
                                 break;
                             case "Email":
                                 testQuery = await _db.Employees.Where(e => e.Email != null).Select(e => e.Email).Take(1).ToListAsync();
@@ -1082,7 +956,6 @@ namespace Backend.Controllers
                         LastName = "USER",
                         HourlyWage = 0m,
                         ProductivityScore = 5.0,
-                        StoreId = 1,
                         Email = "test@test.com",
                         Password = "test123"
                     };
@@ -1150,49 +1023,32 @@ namespace Backend.Controllers
                 if (userTypeClaim == "Manager")
                 {
                     // Manager (User)
-                    var user = await _db.Users
-                        .Include(u => u.Store)
-                        .FirstOrDefaultAsync(u => u.UserId == userId);
-
+                    var user = await _db.Users.FindAsync(userId);
                     if (user == null)
-                    {
                         return NotFound(new { error = "User not found" });
-                    }
 
                     return Ok(new
                     {
                         userId = user.UserId,
                         fullName = user.FullName,
                         email = user.Email,
-                        storeId = user.StoreId,
-                        storeName = user.Store?.Name,
                         role = "Manager",
                         userType = "Manager"
                     });
                 }
-                else
+
+                var employee = await _db.Employees.FindAsync(userId);
+                if (employee == null)
+                    return NotFound(new { error = "Employee not found" });
+
+                return Ok(new
                 {
-                    // Employee
-                    var employee = await _db.Employees
-                        .Include(e => e.Store)
-                        .FirstOrDefaultAsync(e => e.EmployeeId == userId);
-
-                    if (employee == null)
-                    {
-                        return NotFound(new { error = "Employee not found" });
-                    }
-
-                    return Ok(new
-                    {
-                        userId = employee.EmployeeId,
-                        fullName = employee.FirstName.Trim(), // Username is stored in FirstName
-                        email = employee.Email,
-                        storeId = employee.StoreId,
-                        storeName = employee.Store?.Name,
-                        role = "Employee",
-                        userType = "Employee"
-                    });
-                }
+                    userId = employee.EmployeeId,
+                    fullName = employee.FirstName.Trim(),
+                    email = employee.Email,
+                    role = "Employee",
+                    userType = "Employee"
+                });
             }
             catch (Exception ex)
             {
@@ -1212,7 +1068,6 @@ namespace Backend.Controllers
         public string Email { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
         public string Username { get; set; } = string.Empty; // Changed from FullName to Username
-        public int StoreId { get; set; }
     }
 }
 

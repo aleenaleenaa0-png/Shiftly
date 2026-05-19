@@ -7,21 +7,13 @@ interface BackendEmployee {
   lastName: string;
   hourlyWage: number;
   productivityScore: number;
-  storeId: number;
-  storeName?: string;
   fullName?: string;
   availabilityCount?: number; // Number of shifts they're available for
   availabilityMap?: Record<string, boolean>; // Map of slot numbers (1-14) to availability
 }
 
-interface Store {
-  storeId: number;
-  name: string;
-}
-
 interface User {
   userId: number;
-  storeId: number;
   fullName?: string;
   role?: string;
   userType?: string;
@@ -33,7 +25,6 @@ interface EmployeeManagementProps {
 
 const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ user }) => {
   const [employees, setEmployees] = useState<BackendEmployee[]>([]);
-  const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -42,19 +33,15 @@ const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ user }) => {
     firstName: '',
     lastName: '',
     hourlyWage: 0,
-    productivityScore: 0,
-    storeId: 1
+    productivityScore: 0
   });
 
-  // Fetch employees from backend (optionally scoped to manager's store)
+  // Fetch employees from backend
   const fetchEmployees = async () => {
     try {
       setLoading(true);
       setError(null);
-      const url = user?.storeId
-        ? `/api/employees?storeId=${user.storeId}`
-        : '/api/employees';
-      const response = await fetch(url, {
+      const response = await fetch('/api/employees', {
         credentials: 'include'
       });
       
@@ -77,8 +64,6 @@ const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ user }) => {
         lastName: emp.LastName ?? emp.lastName ?? '',
         hourlyWage: emp.HourlyWage ?? emp.hourlyWage ?? 0,
         productivityScore: emp.ProductivityScore ?? emp.productivityScore ?? 0,
-        storeId: emp.StoreId ?? emp.storeId,
-        storeName: emp.StoreName ?? emp.storeName,
         fullName: emp.FullName ?? emp.fullName ?? (emp.FirstName ?? emp.firstName ?? '')
       }));
       
@@ -121,39 +106,15 @@ const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ user }) => {
     }
   };
 
-  // Fetch stores from backend
-  const fetchStores = async () => {
-    try {
-      const response = await fetch('/api/stores', {
-        credentials: 'include'
-      });
-      if (response.ok) {
-        const data = await response.json();
-        // Map backend response to frontend format
-        const mappedStores = data.map((s: any) => ({
-          storeId: s.StoreId || s.storeId,
-          name: s.Name || s.name
-        }));
-        setStores(mappedStores);
-        if (mappedStores.length > 0 && !formData.storeId) {
-          setFormData(prev => ({ ...prev, storeId: mappedStores[0].storeId }));
-        }
-      }
-    } catch (err) {
-      console.error('Error fetching stores:', err);
-    }
-  };
-
   useEffect(() => {
     fetchEmployees();
-    fetchStores();
-  }, [user?.storeId, user?.userId]);
+  }, [user?.userId]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: name === 'hourlyWage' || name === 'productivityScore' || name === 'storeId' 
+      [name]: name === 'hourlyWage' || name === 'productivityScore'
         ? parseFloat(value) || 0 
         : value
     }));
@@ -178,8 +139,7 @@ const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ user }) => {
           firstName: formData.firstName,
           lastName: formData.lastName,
           hourlyWage: formData.hourlyWage,
-          productivityScore: formData.productivityScore,
-          storeId: formData.storeId
+          productivityScore: formData.productivityScore
         }),
       });
 
@@ -212,8 +172,7 @@ const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ user }) => {
       firstName: employee.firstName,
       lastName: employee.lastName,
       hourlyWage: employee.hourlyWage,
-      productivityScore: employee.productivityScore,
-      storeId: employee.storeId
+      productivityScore: employee.productivityScore
     });
     setShowForm(true);
   };
@@ -250,8 +209,7 @@ const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ user }) => {
       firstName: '',
       lastName: '',
       hourlyWage: 0,
-      productivityScore: 0,
-      storeId: stores.length > 0 ? stores[0].storeId : 1
+      productivityScore: 0
     });
     setEditingEmployee(null);
     setShowForm(false);
@@ -366,25 +324,6 @@ const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ user }) => {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">
-                    Store *
-                  </label>
-                  <select
-                    name="storeId"
-                    value={formData.storeId}
-                    onChange={handleInputChange}
-                    required
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  >
-                    {stores.map(store => (
-                      <option key={store.storeId} value={store.storeId}>
-                        {store.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
                 <div className="flex space-x-3 pt-4">
                   <button
                     type="submit"
@@ -433,7 +372,6 @@ const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ user }) => {
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Name</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Store</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Hourly Wage</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Productivity</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Availability</th>
@@ -452,9 +390,6 @@ const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ user }) => {
                           <div className="font-bold text-slate-900">
                             {(employee.fullName || [employee.firstName, employee.lastName].filter(Boolean).join(' ')).trim() || '—'}
                           </div>
-                        </td>
-                        <td className="px-6 py-4 text-slate-600">
-                          {employee.storeName || `Store #${employee.storeId}`}
                         </td>
                         <td className="px-6 py-4">
                           <span className="font-bold text-slate-900">${employee.hourlyWage.toFixed(2)}</span>
