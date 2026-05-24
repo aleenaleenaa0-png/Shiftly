@@ -247,6 +247,27 @@ namespace Backend.Controllers
                         message = "This employee has not marked themselves available for this shift slot."
                     });
                 }
+
+                const int maxShiftsPerWeek = 6;
+                if (shift.EmployeeId != employee.EmployeeId)
+                {
+                    var weekStartDate = ShiftBootstrap.GetWeekStart(shift.StartTime);
+                    var weekEnd = weekStartDate.AddDays(7);
+                    var weeklyCount = await _db.Shifts
+                        .Where(s => s.EmployeeId == employee.EmployeeId
+                            && s.StartTime >= weekStartDate
+                            && s.StartTime < weekEnd)
+                        .CountAsync();
+
+                    if (weeklyCount >= maxShiftsPerWeek)
+                    {
+                        return BadRequest(new
+                        {
+                            error = "Max shifts exceeded",
+                            message = $"Employee already has {maxShiftsPerWeek} shifts this week (legal maximum)."
+                        });
+                    }
+                }
             }
 
             shift.EmployeeId = dto.EmployeeId;

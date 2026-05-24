@@ -52,11 +52,17 @@ import {
   WEEKLY_SHIFT_SLOT_COUNT,
   formatDayHe,
 } from './utils/week';
-import { formatUserRoleHe } from './utils/labelsHe';
+import { formatUserRoleHe, formatShiftTypeHe } from './utils/labelsHe';
 import { buildScheduleReport } from './utils/scheduleReport';
 import WeekNavigator from './components/WeekNavigator';
 import AppToast from './components/AppToast';
 import { notify } from './utils/notify';
+import {
+  MAX_SHIFTS_PER_EMPLOYEE_WEEK,
+  buildEmployeeAssignmentCounts,
+  canAssignEmployeeToShift,
+} from './utils/scheduleLimits';
+import { runFastAutoSchedule } from './utils/autoSchedule';
 
 type Page = 'schedule' | 'employees' | 'availability' | 'users';
 
@@ -135,6 +141,14 @@ const App: React.FC = () => {
   const [publishingSchedule, setPublishingSchedule] = useState(false);
 
   const shiftsBySlot = useMemo(() => buildShiftsBySlotMap(shifts), [shifts]);
+
+  const employeeAssignmentCount = useMemo(
+    () => buildEmployeeAssignmentCounts(
+      shifts,
+      employees.map((e) => e.id)
+    ),
+    [shifts, employees]
+  );
 
   const scheduleReportData = useMemo(
     () =>
@@ -499,11 +513,16 @@ const App: React.FC = () => {
       });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        const serverMsg = (errorData as { message?: string }).message || '';
+        const isMaxShifts =
+          serverMsg.includes('maximum') ||
+          serverMsg.includes('Max shifts') ||
+          (errorData as { error?: string }).error === 'Max shifts exceeded';
         return {
           ok: false,
-          message:
-            (errorData as { message?: string }).message ||
-            'Failed to save assignment. Please try again.',
+          message: isMaxShifts
+            ? `לא ניתן לשבץ — מקסימום ${MAX_SHIFTS_PER_EMPLOYEE_WEEK} משמרות בשבוע לעובד/ת (מגבלה חוקית).`
+            : serverMsg || 'שמירת השיבוץ נכשלה. נסה שוב.',
         };
       }
       return { ok: true };
@@ -513,6 +532,17 @@ const App: React.FC = () => {
   };
 
   const executeAssignment = async (shiftId: string, employeeId: string) => {
+    const limitCheck = canAssignEmployeeToShift(shifts, employeeId, shiftId);
+    if (!limitCheck.ok) {
+      const emp = employees.find((e) => e.id === employeeId);
+      notify(
+        limitCheck.message ||
+          `${emp?.name ?? 'העובד/ת'} כבר משובץ/ת ל-${MAX_SHIFTS_PER_EMPLOYEE_WEEK} משמרות השבוע.`,
+        'error'
+      );
+      return;
+    }
+
     setShifts(prev =>
       prev.map(s => (s.id === shiftId ? { ...s, assignedEmployeeId: employeeId } : s))
     );
@@ -522,7 +552,7 @@ const App: React.FC = () => {
       setShifts(prev =>
         prev.map(s => (s.id === shiftId ? { ...s, assignedEmployeeId: null } : s))
       );
-      alert(result.message || 'Failed to assign employee to shift. Please try again.');
+      notify(result.message || 'שמירת השיבוץ נכשלה', 'error');
       return;
     }
 
@@ -571,6 +601,12 @@ const App: React.FC = () => {
       return;
     }
 
+    const limitCheck = canAssignEmployeeToShift(shifts, employeeId, shiftId);
+    if (!limitCheck.ok) {
+      notify(limitCheck.message!, 'error');
+      return;
+    }
+
     if (shift && emp) {
       const required = shift.targetSales || 0;
       const projected = calculateProjectedThroughput(emp.productivityScore, shift);
@@ -597,91 +633,14 @@ const App: React.FC = () => {
     });
   };
 
-  const fastAutoSchedule = (shiftsToFill: Shift[], availableEmployees: Employee[]) => {
-    const employeeShiftCount: Record<string, number> = {};
-    availableEmployees.forEach(emp => {
-      employeeShiftCount[emp.id] = 0;
-    });
-
-    const sortedShifts = [...shiftsToFill]
-      .filter(s => !s.assignedEmployeeId)
-      .sort((a, b) => b.targetSales - a.targetSales);
-
-    const assignments: { shiftId: string; employeeId: string }[] = [];
-    const emptySlots: { shift: Shift; reason: string }[] = [];
-
-    sortedShifts.forEach(shift => {
-      const availableForShift = getEmployeesAvailableForShift(shift).filter(emp =>
-        availableEmployees.some(e => e.id === emp.id)
-      );
-
-      if (availableForShift.length === 0) {
-        emptySlots.push({
-          shift,
-          reason: `${shift.day} ${shift.type}`,
-        });
-        return;
-      }
-
-      const required = shift.targetSales || 0;
-      const eligibleForThroughput = availableForShift.filter((emp) => {
-        if (required <= 0) return true;
-        const projected = calculateProjectedThroughput(emp.productivityScore, shift);
-        return passesThroughputThreshold(projected, required);
-      });
-
-      if (eligibleForThroughput.length === 0) {
-        emptySlots.push({
-          shift,
-          reason: `${shift.day} ${shift.type} (יעילות מתחת לסף)`,
-        });
-        return;
-      }
-
-      // Calculate match score for each employee
-      // Score = (productivity * targetSales) / (hourlyRate * shiftCount + 1)
-      // Higher productivity + higher target = better match
-      // Lower hourly rate = better cost efficiency
-      // Lower shift count = better workload balance
-      const scoredEmployees = eligibleForThroughput.map(emp => {
-        const productivityMatch = emp.productivityScore * shift.targetSales;
-        const costEfficiency = emp.hourlyRate * (employeeShiftCount[emp.id] + 1);
-        const matchScore = productivityMatch / costEfficiency;
-        
-        return {
-          employee: emp,
-          score: matchScore,
-          shiftCount: employeeShiftCount[emp.id]
-        };
-      });
-
-      // Sort by match score (highest first), then by shift count (lowest first) for balance
-      scoredEmployees.sort((a, b) => {
-        if (Math.abs(a.score - b.score) < 0.01) {
-          // If scores are very close, prefer employee with fewer shifts
-          return a.shiftCount - b.shiftCount;
-        }
-        return b.score - a.score;
-      });
-
-      // Assign the best match
-      const bestMatch = scoredEmployees[0];
-      if (bestMatch) {
-        assignments.push({
-          shiftId: shift.id,
-          employeeId: bestMatch.employee.id
-        });
-        employeeShiftCount[bestMatch.employee.id]++;
-      }
-    });
-
-    return { assignments, emptySlots };
-  };
-
   const handleAutoFill = async () => {
     setIsAutoFilling(true);
     try {
-      const { assignments, emptySlots } = fastAutoSchedule(shifts, employees);
+      const { assignments, emptySlots } = runFastAutoSchedule(
+        shifts,
+        employees,
+        getEmployeesAvailableForShift
+      );
 
       if (emptySlots.length > 0) {
         const lines = emptySlots
@@ -1296,11 +1255,12 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <EmployeeSidebar 
-          employees={employees} 
+        <EmployeeSidebar
+          employees={employees}
           onDragStart={handleDragStart}
           employeeAvailabilityCount={employeeAvailabilityCount}
           employeeAvailabilityMap={employeeAvailabilityMap}
+          employeeAssignmentCount={employeeAssignmentCount}
           loading={loadingEmployees}
         />
       </main>

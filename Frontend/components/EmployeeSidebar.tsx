@@ -6,12 +6,14 @@ import React, { useMemo, useState } from 'react';
 import { Employee } from '../types';
 import { normalizeProductivityScore } from '../utils/throughput';
 import { DAY_SHORT_HE, formatRoleHe } from '../utils/labelsHe';
+import { MAX_SHIFTS_PER_EMPLOYEE_WEEK } from '../constants';
 
 interface EmployeeSidebarProps {
   employees: Employee[];
   onDragStart: (e: React.DragEvent, employeeId: string) => void;
   employeeAvailabilityCount?: Map<string, number>;
   employeeAvailabilityMap?: Map<string, Record<string, boolean>>;
+  employeeAssignmentCount?: Map<string, number>;
   loading?: boolean;
 }
 
@@ -23,6 +25,7 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
   onDragStart,
   employeeAvailabilityCount,
   employeeAvailabilityMap,
+  employeeAssignmentCount,
   loading = false,
 }) => {
   const [search, setSearch] = useState('');
@@ -220,6 +223,8 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
                     ? 'bg-orange-500'
                     : 'bg-red-500';
               const availCount = getAvailabilityCount(emp.id);
+              const assignedCount = employeeAssignmentCount?.get(emp.id) ?? 0;
+              const atWeeklyLimit = assignedCount >= MAX_SHIFTS_PER_EMPLOYEE_WEEK;
 
               return (
                 <div
@@ -248,7 +253,7 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
                       <span className="text-[8px] text-slate-500 block">/10</span>
                     </div>
                   </div>
-                  <div className="mt-1.5 flex items-center justify-between gap-1">
+                  <div className="mt-1.5 flex items-center justify-between gap-1 flex-wrap">
                       {employeeAvailabilityCount && (
                         <span
                           className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
@@ -257,7 +262,21 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
                               : 'bg-slate-100 text-slate-500'
                           }`}
                         >
-                          {availCount} משמרות
+                          {availCount} זמין
+                        </span>
+                      )}
+                      {employeeAssignmentCount && (
+                        <span
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                            atWeeklyLimit
+                              ? 'bg-red-100 text-red-700'
+                              : assignedCount > 0
+                                ? 'bg-indigo-100 text-indigo-700'
+                                : 'bg-slate-100 text-slate-500'
+                          }`}
+                          title={`מקסימום ${MAX_SHIFTS_PER_EMPLOYEE_WEEK} משמרות בשבוע`}
+                        >
+                          {assignedCount}/{MAX_SHIFTS_PER_EMPLOYEE_WEEK} שובץ
                         </span>
                       )}
                     {renderAvailabilityBadges(emp)}
@@ -270,7 +289,7 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
 
         <p className="mt-2 px-2.5 py-1.5 rounded-lg bg-rose-50 border border-rose-200 text-[10px] leading-snug text-slate-600 flex-shrink-0 dir-rtl text-right">
           <i className="fas fa-lightbulb text-amber-500 text-[9px] ml-1" />
-          גרור עובדים עם זמינות למשמרת — זמינות נקבעת בפורטל העובד.
+          גרור עובדים עם זמינות למשמרת. מקסימום {MAX_SHIFTS_PER_EMPLOYEE_WEEK} משמרות שובצות לעובד/ת בשבוע.
         </p>
       </div>
     </div>

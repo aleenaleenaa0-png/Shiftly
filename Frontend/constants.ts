@@ -11,6 +11,9 @@ import { Employee, Shift } from './types';
 export const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 export const DAYS_OF_WEEK = DAYS; // Alias for worker portal compatibility
 
+/** מקסימום משמרות לעובד בשבוע (מגבלה חוקית) */
+export const MAX_SHIFTS_PER_EMPLOYEE_WEEK = 6;
+
 export const EMPLOYEES: Employee[] = [
   { id: '1', name: 'Jordan Michaels', role: 'Manager', hourlyRate: 45, productivityScore: 95, avatar: 'https://picsum.photos/seed/jordan/100', availability: DAYS },
   { id: '2', name: 'Sarah Jenkins', role: 'Sales Lead', hourlyRate: 32, productivityScore: 88, avatar: 'https://picsum.photos/seed/sarah/100', availability: DAYS },
