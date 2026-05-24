@@ -8,6 +8,7 @@ import WorkerHeader from './WorkerHeader';
 import WorkerStatCard from './WorkerStatCard';
 import WorkerAvailabilityPicker from './WorkerAvailabilityPicker';
 import WorkerFinalSchedule from './WorkerFinalSchedule';
+import { formatWeekStartParam, getWeekMonday } from '../utils/week';
 
 interface User {
   userId: number;
@@ -29,53 +30,31 @@ const WorkerPortal: React.FC<WorkerPortalProps> = ({ user, onLogout }) => {
     openShifts: '0'
   });
 
-  // Helper function to get current week start (Monday)
-  const getCurrentWeekStart = () => {
-    const today = new Date();
-    const day = today.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    const monday = new Date(today);
-    monday.setDate(today.getDate() + diff);
-    monday.setHours(0, 0, 0, 0);
-    return monday;
-  };
-
-  // Fetch worker stats from same endpoint as schedule (for-employee)
-  // Filter to current week before calculating to show weekly stats, not lifetime totals
-  // Check for week changes periodically
   useEffect(() => {
     const fetchStats = async () => {
       if (!user.userId) return;
       try {
-        const shiftsResponse = await fetch(
-          `/api/shifts/for-employee?employeeId=${user.userId}`,
-          { credentials: 'include', cache: 'no-cache' }
-        );
+        const weekParam = formatWeekStartParam(getWeekMonday());
+        const shiftsResponse = await fetch(`/api/shifts?weekStart=${weekParam}`, {
+          credentials: 'include',
+          cache: 'no-cache',
+        });
         if (shiftsResponse.ok) {
-          const shifts = await shiftsResponse.json();
-          const arr = Array.isArray(shifts) ? shifts : [];
-          
-          // Calculate current week boundaries (Monday to Sunday)
-          const weekMonday = getCurrentWeekStart();
-          const weekEnd = new Date(weekMonday);
-          weekEnd.setDate(weekMonday.getDate() + 7);
-          
-          // Filter shifts to current week only
-          const currentWeekShifts = arr.filter((shift: any) => {
-            const start = shift.StartTime ?? shift.startTime;
-            if (start == null) return false;
-            const startDate = typeof start === 'string' ? new Date(start) : start;
-            return startDate >= weekMonday && startDate < weekEnd;
+          const data = await shiftsResponse.json();
+          const arr = Array.isArray(data) ? data : [];
+          const userIdStr = String(user.userId);
+          const currentWeekShifts = arr.filter((shift: Record<string, unknown>) => {
+            const empId = shift.EmployeeId ?? shift.employeeId;
+            return empId != null && String(empId) === userIdStr;
           });
-          
-          // Calculate hours only for current week shifts
+
           let totalHours = 0;
           for (const shift of currentWeekShifts) {
             const start = shift.StartTime ?? shift.startTime;
             const end = shift.EndTime ?? shift.endTime;
             if (start != null && end != null) {
-              const startDate = typeof start === 'string' ? new Date(start) : start;
-              const endDate = typeof end === 'string' ? new Date(end) : end;
+              const startDate = typeof start === 'string' ? new Date(String(start)) : new Date(start as Date);
+              const endDate = typeof end === 'string' ? new Date(String(end)) : new Date(end as Date);
               totalHours += (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60);
             }
           }
@@ -84,7 +63,7 @@ const WorkerPortal: React.FC<WorkerPortalProps> = ({ user, onLogout }) => {
             paydayEst: `$${estimatedPay.toLocaleString()}`,
             scheduledHours: `${totalHours.toFixed(1)}h`,
             shiftAccuracy: '98%',
-            openShifts: '0'
+            openShifts: '0',
           });
         }
       } catch (err) {

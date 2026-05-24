@@ -18,7 +18,11 @@ namespace Backend.Services
         public static DateTime GetWeekStart(DateTime? weekStart = null)
         {
             if (weekStart.HasValue)
-                return weekStart.Value.Date;
+            {
+                var value = weekStart.Value;
+                // Use calendar date parts so UTC midnight in query strings does not shift the week.
+                return new DateTime(value.Year, value.Month, value.Day);
+            }
 
             var today = DateTime.Today;
             var dayOfWeek = (int)today.DayOfWeek;

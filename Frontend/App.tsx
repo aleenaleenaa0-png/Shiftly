@@ -19,10 +19,11 @@
  * =============================================================================
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Shift, Employee, ScheduleKPIs } from './types';
 import { DAYS } from './constants';
 import KPIBanner from './components/KPIBanner';
+import ScheduleReportPanel from './components/ScheduleReportPanel';
 import EmployeeSidebar from './components/EmployeeSidebar';
 import EmployeeManagement from './components/EmployeeManagement';
 import EmployeeAvailability from './components/EmployeeAvailability';
@@ -38,7 +39,18 @@ import ProductivityWarningModal, {
 import {
   calculateProjectedThroughput,
   passesThroughputThreshold,
+  STANDARD_SHIFT_HOURS,
 } from './utils/throughput';
+import {
+  formatWeekStartParam,
+  getWeekMonday,
+  buildShiftsBySlotMap,
+  countWeeklyShiftCoverage,
+  mapApiShiftToShift,
+  getShiftForDaySlot,
+  WEEKLY_SHIFT_SLOT_COUNT,
+} from './utils/week';
+import { buildScheduleReport } from './utils/scheduleReport';
 
 type Page = 'schedule' | 'employees' | 'availability' | 'users';
 
@@ -88,9 +100,13 @@ const App: React.FC = () => {
   const [kpis, setKpis] = useState<ScheduleKPIs>({
     totalCost: 0,
     totalTargetSales: 0,
-    efficiencyRatio: 0,
-    coveragePercentage: 0
+    projectedSales: 0,
+    salesPerPayrollDollar: 0,
+    coveragePercentage: 0,
+    filledShifts: 0,
+    totalShifts: WEEKLY_SHIFT_SLOT_COUNT,
   });
+  const [reportOpen, setReportOpen] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isAutoFilling, setIsAutoFilling] = useState(false);
@@ -109,37 +125,48 @@ const App: React.FC = () => {
     employeeId: string;
   } | null>(null);
 
-  const getWeekMonday = () => {
-    const today = new Date();
-    const day = today.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    const monday = new Date(today);
-    monday.setDate(today.getDate() + diff);
-    monday.setHours(0, 0, 0, 0);
-    return monday;
-  };
+  const shiftsBySlot = useMemo(() => buildShiftsBySlotMap(shifts), [shifts]);
+
+  const scheduleReportData = useMemo(
+    () =>
+      buildScheduleReport(
+        shifts,
+        employees,
+        shiftAvailabilityMap,
+        employeeAvailabilityMap
+      ),
+    [shifts, employees, shiftAvailabilityMap, employeeAvailabilityMap]
+  );
 
   useEffect(() => {
+    const bySlot = buildShiftsBySlotMap(shifts);
     let totalCost = 0;
     let totalTargetSales = 0;
-    let filledShifts = 0;
+    let projectedSales = 0;
 
-    shifts.forEach(shift => {
-      totalTargetSales += shift.targetSales;
-      if (shift.assignedEmployeeId) {
-        filledShifts++;
+    for (let slot = 1; slot <= WEEKLY_SHIFT_SLOT_COUNT; slot++) {
+      const shift = bySlot.get(slot);
+      const target = shift?.targetSales ?? (slot % 2 === 1 ? 2500 : 3500);
+      totalTargetSales += target;
+      if (shift?.assignedEmployeeId) {
         const employee = employees.find(e => e.id === shift.assignedEmployeeId);
         if (employee) {
-          totalCost += employee.hourlyRate * 6; // Assume 6h shift
+          totalCost += employee.hourlyRate * STANDARD_SHIFT_HOURS;
+          projectedSales += calculateProjectedThroughput(employee.productivityScore, shift);
         }
       }
-    });
+    }
+
+    const coverage = countWeeklyShiftCoverage(shifts);
 
     setKpis({
       totalCost,
       totalTargetSales,
-      efficiencyRatio: totalCost > 0 ? totalTargetSales / totalCost : 0,
-      coveragePercentage: Math.round((filledShifts / shifts.length) * 100)
+      projectedSales,
+      salesPerPayrollDollar: totalCost > 0 ? totalTargetSales / totalCost : 0,
+      coveragePercentage: coverage.percentage,
+      filledShifts: coverage.filled,
+      totalShifts: coverage.total,
     });
   }, [shifts, employees]);
 
@@ -279,8 +306,8 @@ const App: React.FC = () => {
         setLoadingShifts(true);
         console.log('🔄 Fetching shifts from Access database...');
         
-        const monday = getWeekMonday();
-        const response = await fetch(`/api/shifts?weekStart=${monday.toISOString()}`, {
+        const weekParam = formatWeekStartParam(getWeekMonday());
+        const response = await fetch(`/api/shifts?weekStart=${weekParam}`, {
           credentials: 'include',
           cache: 'no-cache'
         });
@@ -289,25 +316,9 @@ const App: React.FC = () => {
           const data = await response.json();
           console.log(`✓ Received ${data.length} shifts from backend`);
           
-          // Map backend shifts to frontend format
-          const mappedShifts: Shift[] = data.map((shift: any) => {
-            const startTime = new Date(shift.StartTime || shift.startTime);
-            const endTime = new Date(shift.EndTime || shift.endTime);
-            const dayName = startTime.toLocaleDateString('en-US', { weekday: 'long' });
-            const startHour = startTime.getHours();
-            const isMorning = startHour >= 9 && startHour < 15;
-            
-            return {
-              id: (shift.ShiftId || shift.shiftId).toString(),
-              slotNumber: shift.SlotNumber ?? shift.slotNumber ?? 0,
-              day: dayName,
-              startTime: startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false }),
-              endTime: endTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false }),
-              type: isMorning ? 'Morning' : 'Afternoon',
-              targetSales: shift.RequiredProductivity || shift.requiredProductivity || 2500,
-              assignedEmployeeId: shift.EmployeeId || shift.employeeId ? (shift.EmployeeId || shift.employeeId).toString() : null
-            };
-          });
+          const mappedShifts: Shift[] = data.map((shift: Record<string, unknown>) =>
+            mapApiShiftToShift(shift)
+          );
 
           setShifts(mappedShifts);
           console.log(`✓ Successfully loaded ${mappedShifts.length} shifts from Access database`);
@@ -331,9 +342,9 @@ const App: React.FC = () => {
     if (shifts.length === 0 || employees.length === 0) return;
 
     try {
-      const monday = getWeekMonday();
+      const weekParam = formatWeekStartParam(getWeekMonday());
       const response = await fetch(
-        `/api/availabilities/manager-summary?weekStart=${encodeURIComponent(monday.toISOString())}`,
+        `/api/availabilities/manager-summary?weekStart=${encodeURIComponent(weekParam)}`,
         { credentials: 'include', cache: 'no-store' }
       );
 
@@ -433,14 +444,26 @@ const App: React.FC = () => {
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const executeAssignment = async (shiftId: string, employeeId: string) => {
-    const backendShiftId = parseInt(shiftId);
-    const backendEmployeeId = parseInt(employeeId);
-
-    setShifts(prev =>
-      prev.map(s => (s.id === shiftId ? { ...s, assignedEmployeeId: employeeId } : s))
+  const refreshShiftsFromServer = useCallback(async () => {
+    const weekParam = formatWeekStartParam(getWeekMonday());
+    const response = await fetch(`/api/shifts?weekStart=${weekParam}`, {
+      credentials: 'include',
+      cache: 'no-cache',
+    });
+    if (!response.ok) return;
+    const data = await response.json();
+    const mappedShifts: Shift[] = (Array.isArray(data) ? data : []).map(
+      (shift: Record<string, unknown>) => mapApiShiftToShift(shift)
     );
+    setShifts(mappedShifts);
+  }, []);
 
+  const persistAssignmentToApi = async (
+    shiftId: string,
+    employeeId: string | null
+  ): Promise<{ ok: boolean; message?: string }> => {
+    const backendShiftId = parseInt(shiftId, 10);
+    const backendEmployeeId = employeeId != null ? parseInt(employeeId, 10) : null;
     try {
       const response = await fetch(`/api/shifts/${backendShiftId}/assign`, {
         method: 'POST',
@@ -448,64 +471,36 @@ const App: React.FC = () => {
         credentials: 'include',
         body: JSON.stringify({ employeeId: backendEmployeeId }),
       });
-
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        setShifts(prev =>
-          prev.map(s => (s.id === shiftId ? { ...s, assignedEmployeeId: null } : s))
-        );
-        console.error('Failed to assign employee to shift');
-        alert(errorData.message || 'Failed to assign employee to shift. Please try again.');
-        return;
+        return {
+          ok: false,
+          message:
+            (errorData as { message?: string }).message ||
+            'Failed to save assignment. Please try again.',
+        };
       }
+      return { ok: true };
+    } catch {
+      return { ok: false, message: 'Network error while saving assignment.' };
+    }
+  };
 
-      console.log(`✓ Assigned employee ${employeeId} to shift ${shiftId} in database`);
-      if (user) {
-        const monday = getWeekMonday();
-        const shiftsResponse = await fetch(`/api/shifts?weekStart=${monday.toISOString()}`, {
-          credentials: 'include',
-        });
-        if (shiftsResponse.ok) {
-          const data = await shiftsResponse.json();
-          const mappedShifts: Shift[] = data.map((shift: any) => {
-            const startTime = new Date(shift.StartTime || shift.startTime);
-            const endTime = new Date(shift.EndTime || shift.endTime);
-            const dayName = startTime.toLocaleDateString('en-US', { weekday: 'long' });
-            const startHour = startTime.getHours();
-            const isMorning = startHour >= 9 && startHour < 15;
+  const executeAssignment = async (shiftId: string, employeeId: string) => {
+    setShifts(prev =>
+      prev.map(s => (s.id === shiftId ? { ...s, assignedEmployeeId: employeeId } : s))
+    );
 
-            return {
-              id: (shift.ShiftId || shift.shiftId).toString(),
-              day: dayName,
-              startTime: startTime.toLocaleTimeString('en-US', {
-                hour: 'numeric',
-                minute: '2-digit',
-                hour12: false,
-              }),
-              endTime: endTime.toLocaleTimeString('en-US', {
-                hour: 'numeric',
-                minute: '2-digit',
-                hour12: false,
-              }),
-              type: isMorning ? 'Morning' : 'Afternoon',
-              slotNumber: shift.SlotNumber ?? shift.slotNumber ?? 0,
-              targetSales: shift.RequiredProductivity || shift.requiredProductivity || 2500,
-              assignedEmployeeId:
-                shift.EmployeeId || shift.employeeId
-                  ? (shift.EmployeeId || shift.employeeId).toString()
-                  : null,
-            };
-          });
-          setShifts(mappedShifts);
-        }
-      }
-    } catch (err) {
-      console.error('Error assigning employee to shift:', err);
+    const result = await persistAssignmentToApi(shiftId, employeeId);
+    if (!result.ok) {
       setShifts(prev =>
         prev.map(s => (s.id === shiftId ? { ...s, assignedEmployeeId: null } : s))
       );
-      alert('Error assigning employee to shift. Please try again.');
+      alert(result.message || 'Failed to assign employee to shift. Please try again.');
+      return;
     }
+
+    await refreshShiftsFromServer();
   };
 
   const handleProductivityWarningCancel = () => {
@@ -564,32 +559,42 @@ const App: React.FC = () => {
     await executeAssignment(shiftId, employeeId);
   };
 
-  // Fast local auto-schedule algorithm (no API calls)
+  const getEmployeesAvailableForShift = (shift: Shift): Employee[] => {
+    const slotKey = shift.slotNumber ? String(shift.slotNumber) : '';
+    const idsFromShift = shiftAvailabilityMap.get(shift.id) || [];
+
+    return employees.filter(emp => {
+      const backendId = Number(emp.id);
+      const inShiftList = idsFromShift.some(id => Number(id) === backendId);
+      const slots = employeeAvailabilityMap.get(emp.id) || {};
+      const inSlotMap = slotKey ? slots[slotKey] === true : false;
+      return inShiftList || inSlotMap;
+    });
+  };
+
   const fastAutoSchedule = (shiftsToFill: Shift[], availableEmployees: Employee[]) => {
-    // Track how many shifts each employee has been assigned
     const employeeShiftCount: Record<string, number> = {};
     availableEmployees.forEach(emp => {
       employeeShiftCount[emp.id] = 0;
     });
 
-    // Sort shifts by target sales (highest first) - prioritize high-value shifts
     const sortedShifts = [...shiftsToFill]
-      .filter(s => !s.assignedEmployeeId) // Only unassigned shifts
+      .filter(s => !s.assignedEmployeeId)
       .sort((a, b) => b.targetSales - a.targetSales);
 
     const assignments: { shiftId: string; employeeId: string }[] = [];
+    const emptySlots: { shift: Shift; reason: string }[] = [];
 
-    // For each shift, find the best employee
     sortedShifts.forEach(shift => {
-      // Filter employees by availability
-      const availableForShift = availableEmployees.filter(emp => {
-        // Check if employee is available on this day
-        const isAvailable = emp.availability.includes(shift.day);
-        return isAvailable;
-      });
+      const availableForShift = getEmployeesAvailableForShift(shift).filter(emp =>
+        availableEmployees.some(e => e.id === emp.id)
+      );
 
       if (availableForShift.length === 0) {
-        // No available employees, skip this shift
+        emptySlots.push({
+          shift,
+          reason: `${shift.day} ${shift.type}`,
+        });
         return;
       }
 
@@ -630,32 +635,61 @@ const App: React.FC = () => {
       }
     });
 
-    return assignments;
+    return { assignments, emptySlots };
   };
 
   const handleAutoFill = async () => {
     setIsAutoFilling(true);
-    
-    // Use fast local algorithm instead of AI API
-    // This runs instantly without network calls
     try {
-      const assignments = fastAutoSchedule(shifts, employees);
-      
-      if (assignments.length > 0) {
-        setShifts(prev => prev.map(s => {
-          const assignment = assignments.find(a => a.shiftId === s.id);
-          return assignment ? { ...s, assignedEmployeeId: assignment.employeeId } : s;
-        }));
-      } else {
-        // No assignments made - might be no available employees
-        alert("לא נמצאו עובדים זמינים לשיבוץ. אנא ודא שיש עובדים עם זמינות מתאימה.");
+      const { assignments, emptySlots } = fastAutoSchedule(shifts, employees);
+
+      if (emptySlots.length > 0) {
+        const lines = emptySlots
+          .slice(0, 6)
+          .map(
+            e =>
+              `• ${e.reason}: Plot twist — zero volunteers! Even the coffee machine looks disappointed. ☕😅 (${e.shift.startTime}–${e.shift.endTime})`
+          )
+          .join('\n');
+        const more =
+          emptySlots.length > 6 ? `\n…and ${emptySlots.length - 6} more.` : '';
+        alert(
+          `Auto Schedule checked the availability guest list…\n\n${lines}${more}\n\nTip: Ask workers to set availability in the Worker Portal, then try again!`
+        );
+      }
+
+      if (assignments.length === 0) {
+        if (emptySlots.length === 0) {
+          alert('לא נמצאו עובדים זמינים לשיבוץ. אנא ודא שיש עובדים עם זמינות מתאימה.');
+        }
+        return;
+      }
+
+      let saved = 0;
+      const failed: string[] = [];
+      for (const { shiftId, employeeId } of assignments) {
+        const result = await persistAssignmentToApi(shiftId, employeeId);
+        if (result.ok) saved++;
+        else failed.push(shiftId);
+      }
+
+      await refreshShiftsFromServer();
+
+      if (failed.length > 0) {
+        alert(
+          `Auto Schedule saved ${saved} assignment(s). ${failed.length} could not be saved (availability rules on server).`
+        );
       }
     } catch (error) {
       console.error('Auto schedule error:', error);
-      alert("שגיאה ביצירת סידור עבודה אוטומטי.");
+      alert('שגיאה ביצירת סידור עבודה אוטומטי.');
     } finally {
       setIsAutoFilling(false);
     }
+  };
+
+  const runScheduleReport = () => {
+    setReportOpen(true);
   };
 
   const runAiAnalysis = async () => {
@@ -804,76 +838,22 @@ const App: React.FC = () => {
     setSuggestionLoading(shift.id);
     const result = await getSmartSuggestion(shift, employees);
     if (result && result.includes('|')) {
-        const [empId, reason] = result.split('|').map(s => s.trim());
-        if (employees.find(e => e.id === empId)) {
-            setShifts(prev => prev.map(s => s.id === shift.id ? { ...s, assignedEmployeeId: empId } : s));
-            // Show suggestion as a small toast or inline instead of alert in a real app, but alert works for demo
-            console.log(`AI Suggestion for ${shift.day}: ${reason}`);
-        }
+      const [empId, reason] = result.split('|').map(s => s.trim());
+      if (employees.find(e => e.id === empId)) {
+        console.log(`AI Suggestion for ${shift.day}: ${reason}`);
+        await executeAssignment(shift.id, empId);
+      }
     }
     setSuggestionLoading(null);
   };
 
   const removeAssignment = async (shiftId: string) => {
-    // Optimistically update UI
-    setShifts(prev => prev.map(s => s.id === shiftId ? { ...s, assignedEmployeeId: null } : s));
-    
-    // Save to database - remove employee assignment
-    try {
-      const backendShiftId = parseInt(shiftId); // Frontend shift ID is the backend Shift_ID
-      
-      const response = await fetch(`/api/shifts/${backendShiftId}/assign`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          employeeId: null // Set to null to remove assignment
-        })
-      });
-      
-      if (!response.ok) {
-        console.error('Failed to remove employee assignment from shift');
-        // Refresh shifts to get correct state
-        if (user) {
-          const today = new Date();
-          const day = today.getDay();
-          const diff = today.getDate() - day + (day === 0 ? -6 : 1);
-          const monday = new Date(today.setDate(diff));
-          monday.setHours(0, 0, 0, 0);
-          
-          const shiftsResponse = await fetch(`/api/shifts?weekStart=${monday.toISOString()}`, {
-            credentials: 'include'
-          });
-          if (shiftsResponse.ok) {
-            const data = await shiftsResponse.json();
-            const mappedShifts: Shift[] = data.map((shift: any) => {
-              const startTime = new Date(shift.StartTime || shift.startTime);
-              const endTime = new Date(shift.EndTime || shift.endTime);
-              const dayName = startTime.toLocaleDateString('en-US', { weekday: 'long' });
-              const startHour = startTime.getHours();
-              const isMorning = startHour >= 9 && startHour < 15;
-              
-              return {
-                id: (shift.ShiftId || shift.shiftId).toString(),
-                day: dayName,
-                startTime: startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false }),
-                endTime: endTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false }),
-                type: isMorning ? 'Morning' : 'Afternoon',
-                targetSales: shift.RequiredProductivity || shift.requiredProductivity || 2500,
-                assignedEmployeeId: shift.EmployeeId || shift.employeeId ? (shift.EmployeeId || shift.employeeId).toString() : null
-              };
-            });
-            setShifts(mappedShifts);
-          }
-        }
-      } else {
-        console.log(`✓ Removed employee assignment from shift ${shiftId} in database`);
-      }
-    } catch (err) {
-      console.error('Error removing employee assignment:', err);
+    setShifts(prev => prev.map(s => (s.id === shiftId ? { ...s, assignedEmployeeId: null } : s)));
+    const result = await persistAssignmentToApi(shiftId, null);
+    if (!result.ok) {
+      alert(result.message || 'Failed to remove assignment.');
     }
+    await refreshShiftsFromServer();
   };
 
   // Show login page if not authenticated
@@ -1045,62 +1025,6 @@ const App: React.FC = () => {
             {(user.role === 'Manager' || user.userType === 'Manager') && (
               <div className="flex items-center space-x-2">
                 <button 
-                    onClick={async () => {
-                      if (!confirm('This will delete and recreate all shifts for the current week and next 4 weeks. Continue?')) {
-                        return;
-                      }
-                      try {
-                        const response = await fetch(`/api/shifts/reinitialize`, {
-                          method: 'POST',
-                          credentials: 'include'
-                        });
-                        if (response.ok) {
-                          const data = await response.json();
-                          alert(`Success! ${data.message}\nDeleted: ${data.shiftsDeleted} shifts\nCreated: ${data.shiftsCreated} shifts`);
-                          // Refresh shifts
-                          const today = new Date();
-                          const day = today.getDay();
-                          const diff = today.getDate() - day + (day === 0 ? -6 : 1);
-                          const monday = new Date(today.setDate(diff));
-                          monday.setHours(0, 0, 0, 0);
-                          const shiftsResponse = await fetch(`/api/shifts?weekStart=${monday.toISOString()}`, {
-                            credentials: 'include'
-                          });
-                          if (shiftsResponse.ok) {
-                            const shiftsData = await shiftsResponse.json();
-                            const mappedShifts: Shift[] = shiftsData.map((shift: any) => {
-                              const startTime = new Date(shift.StartTime || shift.startTime);
-                              const endTime = new Date(shift.EndTime || shift.endTime);
-                              const dayName = startTime.toLocaleDateString('en-US', { weekday: 'long' });
-                              const startHour = startTime.getHours();
-                              const isMorning = startHour >= 9 && startHour < 15;
-                              return {
-                                id: (shift.ShiftId || shift.shiftId).toString(),
-                                day: dayName,
-                                startTime: startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false }),
-                                endTime: endTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false }),
-                                type: isMorning ? 'Morning' : 'Afternoon',
-                                targetSales: shift.RequiredProductivity || shift.requiredProductivity || 2500,
-                                assignedEmployeeId: shift.EmployeeId || shift.employeeId ? (shift.EmployeeId || shift.employeeId).toString() : null
-                              };
-                            });
-                            setShifts(mappedShifts);
-                          }
-                        } else {
-                          const errorData = await response.json().catch(() => ({}));
-                          alert(`Error: ${errorData.message || errorData.error || 'Failed to reinitialize shifts'}`);
-                        }
-                      } catch (err: any) {
-                        alert(`Error: ${err.message}`);
-                      }
-                    }}
-                    className="flex items-center space-x-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg transform hover:scale-105 active:scale-95"
-                    title="Reinitialize Shifts (Delete and Recreate)"
-                >
-                    <i className="fas fa-redo"></i>
-                    <span className="hidden sm:inline ml-2">Reinit Shifts</span>
-                </button>
-                <button 
                     onClick={handleAutoFill}
                     disabled={isAutoFilling}
                     className="flex items-center space-x-2 bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 hover:from-rose-400 hover:via-purple-400 hover:to-cyan-400 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-rose-500/30 hover:shadow-lg hover:shadow-rose-500/40 disabled:opacity-50 transform hover:scale-105 active:scale-95 relative overflow-hidden group"
@@ -1113,12 +1037,11 @@ const App: React.FC = () => {
                   </span>
                 </button>
                 <button 
-                    onClick={runAiAnalysis}
-                    disabled={isAnalyzing}
-                    className="flex items-center space-x-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg disabled:opacity-50 transform hover:scale-105 active:scale-95"
-                    title="Performance Report"
+                    onClick={runScheduleReport}
+                    className="flex items-center space-x-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg transform hover:scale-105 active:scale-95"
+                    title="Weekly Schedule Report"
                 >
-                    <i className={`fas ${isAnalyzing ? 'fa-spinner fa-spin' : 'fa-chart-line'}`}></i>
+                    <i className="fas fa-chart-line"></i>
                     <span className="hidden sm:inline ml-2">Report</span>
                 </button>
               </div>
@@ -1156,6 +1079,13 @@ const App: React.FC = () => {
         <main className="relative z-10 max-w-7xl mx-auto w-full px-4 lg:px-8 py-10 flex flex-col lg:flex-row gap-8">
         <div className="flex-1 min-w-0">
           <KPIBanner kpis={kpis} />
+
+          {reportOpen && (
+            <ScheduleReportPanel
+              report={scheduleReportData}
+              onClose={() => setReportOpen(false)}
+            />
+          )}
 
           {aiAnalysis && (
             <div className="mb-8 bg-white/80 backdrop-blur-2xl border-2 border-rose-300/50 rounded-2xl overflow-hidden shadow-2xl shadow-rose-500/20 animate-in slide-in-from-top duration-500">
@@ -1215,8 +1145,8 @@ const App: React.FC = () => {
                     </tr>
                   ) : (
                     DAYS.map(day => {
-                      const morningShift = shifts.find(s => s.day === day && s.type === 'Morning');
-                      const afternoonShift = shifts.find(s => s.day === day && s.type === 'Afternoon');
+                      const morningShift = getShiftForDaySlot(shiftsBySlot, day, 'Morning');
+                      const afternoonShift = getShiftForDaySlot(shiftsBySlot, day, 'Afternoon');
                       
                       return (
                         <tr key={day} className="group">

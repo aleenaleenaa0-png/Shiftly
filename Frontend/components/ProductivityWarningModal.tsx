@@ -19,24 +19,35 @@ interface ProductivityWarningModalProps {
   onProceed: () => void;
 }
 
-const MetricRow: React.FC<{
+const ThroughputBar: React.FC<{
   label: string;
-  value: string;
-  hint?: string;
-  accent?: boolean;
-}> = ({ label, value, hint, accent }) => (
-  <div
-    className={`px-4 py-3 border-t border-slate-100 flex flex-col gap-0.5 ${
-      accent ? 'bg-amber-50/40' : ''
-    }`}
-  >
-    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-baseline gap-1">
-      <span className="text-slate-500 font-medium">{label}</span>
-      <span className="font-bold text-slate-900">{value}</span>
+  value: number;
+  max: number;
+  tone: 'projected' | 'minimum' | 'required';
+}> = ({ label, value, max, tone }) => {
+  const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
+  const barClass =
+    tone === 'projected'
+      ? 'bg-amber-500'
+      : tone === 'minimum'
+        ? 'bg-orange-400'
+        : 'bg-slate-400';
+
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-[11px]">
+        <span className="text-slate-500 font-medium">{label}</span>
+        <span className="font-bold text-slate-800">{formatThroughput(value)}</span>
+      </div>
+      <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+        <div
+          className={`h-full rounded-full ${barClass} transition-all`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
     </div>
-    {hint && <span className="text-xs text-slate-400">{hint}</span>}
-  </div>
-);
+  );
+};
 
 const ProductivityWarningModal: React.FC<ProductivityWarningModalProps> = ({
   context,
@@ -52,89 +63,73 @@ const ProductivityWarningModal: React.FC<ProductivityWarningModalProps> = ({
   const projected = calculateProjectedThroughput(employee.productivityScore, shift);
   const minimum = getMinimumAcceptableThroughput(required);
   const shortfall = Math.max(0, minimum - projected);
-  const shortfallPct = required > 0 ? ((shortfall / required) * 100).toFixed(1) : '0';
+  const shortfallPct = minimum > 0 ? Math.round((shortfall / minimum) * 100) : 0;
+
+  const shiftLabel = `${shift.day} · ${shift.type} (${shift.startTime}–${shift.endTime})`;
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/45 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="productivity-warning-title"
+      onClick={onCancel}
     >
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-amber-200/80 overflow-hidden">
-        <div className="bg-gradient-to-r from-amber-50 to-orange-50 px-6 py-5 border-b border-amber-100">
-          <div className="flex items-start gap-4">
-            <div className="flex-shrink-0 w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
-              <i className="fas fa-chart-line text-amber-600 text-xl" aria-hidden />
-            </div>
-            <div>
-              <h2 id="productivity-warning-title" className="text-lg font-bold text-slate-900">
-                Workforce Efficiency Notice
-              </h2>
-              <p className="text-sm text-slate-600 mt-1">Throughput threshold not met — manager discretion required</p>
-            </div>
+      <div
+        className="bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-amber-200/80 overflow-hidden max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-4 py-3 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-100 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+            <i className="fas fa-exclamation-triangle text-amber-600 text-sm" aria-hidden />
+          </div>
+          <div className="min-w-0">
+            <h2 id="productivity-warning-title" className="text-sm font-bold text-slate-900 dir-rtl text-right">
+              התראת יעילות
+            </h2>
+            <p className="text-[11px] text-slate-600 dir-rtl text-right">
+              תפוקה צפויה מתחת לסף המינימום (90% מ-{formatThroughput(required)})
+            </p>
           </div>
         </div>
 
-        <div className="px-6 py-6 space-y-5 text-slate-700">
-          <p className="text-sm leading-relaxed">
-            Based on this employee&apos;s productivity index and the scheduled shift duration, their
-            projected throughput falls below the shift&apos;s required minimum (90% of{' '}
-            <span className="font-semibold">{formatThroughput(required)}</span>, allowing a 10%
-            tolerance). Proceeding with this assignment may not meet operational efficiency standards
-            for this shift.
+        <div className="px-4 py-3 space-y-3 text-xs text-slate-700">
+          <p className="text-[11px] leading-relaxed dir-rtl text-right text-slate-600">
+            <span className="font-bold text-slate-800">{employee.name}</span> — ציון {score.toFixed(1)}/10 ·{' '}
+            {hours} שעות · יעד משמרת {formatThroughput(required)}. ניתן לשבץ בכל זאת לפי שיקול דעתך.
           </p>
 
-          <div className="rounded-xl border border-slate-200 overflow-hidden text-sm">
-            <div className="bg-slate-50 px-4 py-2 font-bold text-slate-800 text-xs uppercase tracking-wider">
-              Assignment details
-            </div>
-            <MetricRow label="Employee" value={employee.name} />
-            <MetricRow
-              label="Shift"
-              value={`${shift.day} · ${shift.type} (${shift.startTime}–${shift.endTime})`}
-            />
-            <MetricRow label="Shift duration" value={`${hours} hours`} />
-            <MetricRow label="Productivity index" value={`${score.toFixed(1)} / 10`} />
+          <p className="text-[10px] text-slate-500 dir-rtl text-right truncate" title={shiftLabel}>
+            {shiftLabel}
+          </p>
+
+          <div className="space-y-2.5 pt-1">
+            <ThroughputBar label="תפוקה צפויה" value={projected} max={required} tone="projected" />
+            <ThroughputBar label="מינימום (90%)" value={minimum} max={required} tone="minimum" />
+            <ThroughputBar label="יעד משמרת" value={required} max={required} tone="required" />
           </div>
 
-          <div className="rounded-xl border border-amber-200 bg-amber-50/50 overflow-hidden text-sm">
-            <div className="bg-amber-100/60 px-4 py-2 font-bold text-amber-900 text-xs uppercase tracking-wider">
-              Throughput analysis
-            </div>
-            <MetricRow
-              label="Projected throughput"
-              value={formatThroughput(projected)}
-              hint={`Productivity (${score.toFixed(1)}) × ${hours}h, aligned to shift target`}
-              accent
-            />
-            <MetricRow label="Required throughput" value={formatThroughput(required)} />
-            <MetricRow label="Minimum acceptable (90%)" value={formatThroughput(minimum)} />
-            {shortfall > 0 && (
-              <div className="px-4 py-3 border-t border-amber-200 bg-amber-100/30">
-                <p className="text-amber-900 font-semibold text-sm">
-                  Estimated shortfall: {formatThroughput(shortfall)} ({shortfallPct}% below
-                  requirement)
-                </p>
-              </div>
-            )}
-          </div>
+          {shortfall > 0 && (
+            <p className="text-[11px] font-semibold text-amber-800 bg-amber-50 rounded-lg px-2.5 py-1.5 dir-rtl text-right">
+              פער: {formatThroughput(shortfall)} ({shortfallPct}% מתחת למינימום)
+            </p>
+          )}
         </div>
 
-        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+        <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex gap-2">
           <button
             type="button"
             onClick={onCancel}
-            className="px-5 py-2.5 rounded-xl border-2 border-slate-300 text-slate-700 font-semibold hover:bg-white transition-colors"
+            className="flex-1 px-3 py-2 rounded-lg border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-white transition-colors"
           >
-            Cancel assignment
+            ביטול
           </button>
           <button
             type="button"
             onClick={onProceed}
-            className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-md transition-colors"
+            className="flex-1 px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-sm transition-colors"
           >
-            Assign anyway
+            שיבוץ בכל זאת
           </button>
         </div>
       </div>

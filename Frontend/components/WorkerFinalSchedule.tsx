@@ -21,6 +21,12 @@ interface WorkerFinalScheduleProps {
 }
 
 import { DAYS } from '../constants';
+import {
+  formatWeekStartParam,
+  getWeekMonday,
+  mapApiShiftToShift,
+  resolveSlotNumber,
+} from '../utils/week';
 
 const DAYS_OF_WEEK = DAYS;
 
@@ -33,23 +39,12 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
   const prevPublishedRef = useRef<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Helper function to get current week start (Monday)
-  const getCurrentWeekStart = () => {
-    const today = new Date();
-    const day = today.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    const monday = new Date(today);
-    monday.setDate(today.getDate() + diff);
-    monday.setHours(0, 0, 0, 0);
-    return monday;
-  };
-
   // Fetch publish status (so we can show "Schedule shared by manager")
   // Poll more frequently so workers see updates when manager publishes
   useEffect(() => {
     const fetchPublishStatus = () => {
-      const monday = getCurrentWeekStart();
-      fetch(`/api/schedule/publish/status?weekStart=${monday.toISOString()}`, { credentials: 'include' })
+      const weekParam = formatWeekStartParam(getWeekMonday());
+      fetch(`/api/schedule/publish/status?weekStart=${weekParam}`, { credentials: 'include' })
         .then(res => res.ok ? res.json() : null)
         .then(data => {
           if (data && data.published !== undefined) {
@@ -82,187 +77,53 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
     return () => clearInterval(interval);
   }, []);
 
-  // Map raw API shift to our Shift format
-  const mapShift = (s: any): Shift => {
-    const start = s.StartTime ?? s.startTime;
-    const end = s.EndTime ?? s.endTime;
-    const startDate = typeof start === 'string' ? new Date(start) : start;
-    const endDate = typeof end === 'string' ? new Date(end) : end;
-    const startTimeStr = startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-    const endTimeStr = endDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-    return {
-      id: String(s.ShiftId ?? s.shiftId ?? ''),
-      workerName: userName,
-      startTime: startTimeStr,
-      endTime: endTimeStr,
-      role: 'Employee',
-      date: startDate.toISOString(),
-      slotNumber: s.SlotNumber ?? s.slotNumber ?? 0
-    };
-  };
-
-  // Fetch ALL shifts for this worker (backend returns every assigned shift); filter to current week for display
-  // Poll more frequently so workers see their schedule updates immediately
   useEffect(() => {
     const fetchShifts = async () => {
       if (!userId) return;
       try {
         setLoading(true);
-        const url = `/api/shifts/for-employee?employeeId=${Number(userId)}`;
-        console.log('WorkerFinalSchedule: Fetching shifts from', url);
-        
+        const weekParam = formatWeekStartParam(getWeekMonday());
+        const url = `/api/shifts?weekStart=${weekParam}`;
         const res = await fetch(url, { credentials: 'include', cache: 'no-cache' });
-        
+
         if (!res.ok) {
           const errorText = await res.text();
-          console.error('WorkerFinalSchedule: API error', res.status, res.statusText, errorText);
           let errorMessage = `Failed to load schedule (${res.status})`;
           try {
             const errorData = JSON.parse(errorText);
-            console.error('WorkerFinalSchedule: Error details', errorData);
             errorMessage = errorData.message || errorData.error || errorMessage;
           } catch {
-            // Not JSON, already logged as text
+            /* not json */
           }
           setError(errorMessage);
           setShifts([]);
           setLoading(false);
           return;
         }
-        
-        // Clear any previous errors on success
+
         setError(null);
-        
         const data = await res.json();
-        console.log('WorkerFinalSchedule: ========================================');
-        console.log('WorkerFinalSchedule: API RESPONSE RECEIVED');
-        console.log('WorkerFinalSchedule: Full API response:', JSON.stringify(data, null, 2));
-        console.log('WorkerFinalSchedule: Response type:', Array.isArray(data) ? 'Array' : typeof data);
         const allRaw = Array.isArray(data) ? data : [];
-        console.log('WorkerFinalSchedule: Total shifts in response:', allRaw.length);
-        
-        if (allRaw.length === 0) {
-          console.log('WorkerFinalSchedule: No shifts assigned for employeeId=', userId);
-        }
-        console.log('WorkerFinalSchedule: ========================================');
-        
-        const weekMonday = getCurrentWeekStart();
-        const weekEnd = new Date(weekMonday);
-        weekEnd.setDate(weekMonday.getDate() + 7);
-        
-        // Use a much wider buffer (2 weeks before and after) to catch any shifts
-        // This ensures we don't miss shifts due to timezone or date calculation issues
-        const weekStartWithBuffer = new Date(weekMonday);
-        weekStartWithBuffer.setDate(weekMonday.getDate() - 14); // 2 weeks before
-        const weekEndWithBuffer = new Date(weekEnd);
-        weekEndWithBuffer.setDate(weekEnd.getDate() + 14); // 2 weeks after
-        
-        console.log('WorkerFinalSchedule: Current week (Monday to Sunday)', {
-          weekStart: weekMonday.toISOString().split('T')[0],
-          weekEnd: weekEnd.toISOString().split('T')[0],
-          weekStartLocal: weekMonday.toLocaleDateString(),
-          weekEndLocal: weekEnd.toLocaleDateString()
+        const userIdStr = String(userId);
+
+        const assigned = allRaw.filter((s: Record<string, unknown>) => {
+          const empId = s.EmployeeId ?? s.employeeId;
+          return empId != null && String(empId) === userIdStr;
         });
-        console.log('WorkerFinalSchedule: Filtering with wide buffer (2 weeks before/after)');
-        
-        const inCurrentWeek = (s: any) => {
-          const start = s.StartTime ?? s.startTime;
-          if (!start) {
-            console.warn('WorkerFinalSchedule: Shift missing StartTime', s);
-            return false;
-          }
-          
-          // Parse the date - handle both string and Date objects
-          let d: Date;
-          if (typeof start === 'string') {
-            d = new Date(start);
-          } else if (start instanceof Date) {
-            d = start;
-          } else {
-            console.warn('WorkerFinalSchedule: Invalid date format', start);
-            return false;
-          }
-          
-          // Check if date is valid
-          if (isNaN(d.getTime())) {
-            console.warn('WorkerFinalSchedule: Invalid date', start);
-            return false;
-          }
-          
-          // Compare using the full datetime (not just date) with wide buffer
-          // This is more lenient and will catch shifts even if there are timezone issues
-          const inRange = d >= weekStartWithBuffer && d < weekEndWithBuffer;
-          
-          // Also check if it's in the actual current week (for logging)
-          const inActualWeek = d >= weekMonday && d < weekEnd;
-          
-          if (inRange && inActualWeek) {
-            console.log('WorkerFinalSchedule: ✓✓✓ Shift in CURRENT week', {
-              shiftId: s.ShiftId ?? s.shiftId,
-              startTime: d.toISOString(),
-              startTimeLocal: d.toLocaleString(),
-              dateOnly: d.toISOString().split('T')[0],
-              slotNumber: s.SlotNumber ?? s.slotNumber,
-              employeeId: s.EmployeeId
-            });
-          } else if (inRange) {
-            console.log('WorkerFinalSchedule: ✓ Shift in buffer range (outside current week)', {
-              shiftId: s.ShiftId ?? s.shiftId,
-              startTime: d.toISOString(),
-              startTimeLocal: d.toLocaleString(),
-              dateOnly: d.toISOString().split('T')[0],
-              slotNumber: s.SlotNumber ?? s.slotNumber,
-              daysFromMonday: Math.round((d.getTime() - weekMonday.getTime()) / (1000 * 60 * 60 * 24))
-            });
-          } else {
-            console.log('WorkerFinalSchedule: ✗ Shift outside buffer range', {
-              shiftId: s.ShiftId ?? s.shiftId,
-              startTime: d.toISOString(),
-              startTimeLocal: d.toLocaleString(),
-              dateOnly: d.toISOString().split('T')[0],
-              slotNumber: s.SlotNumber ?? s.slotNumber
-            });
-          }
-          
-          return inRange;
-        };
-        // Filter to current week, but also log all shifts for debugging
-        console.log('WorkerFinalSchedule: All shifts received (before filtering):', allRaw.length);
-        if (allRaw.length > 0) {
-          console.log('WorkerFinalSchedule: Sample shift data:', allRaw[0]);
-          // Log first few shifts to see their dates
-          allRaw.slice(0, 5).forEach((s: any, idx: number) => {
-            const start = s.StartTime ?? s.startTime;
-            const d = start ? (typeof start === 'string' ? new Date(start) : start) : null;
-            console.log(`WorkerFinalSchedule: Shift ${idx + 1}:`, {
-              shiftId: s.ShiftId ?? s.shiftId,
-              startTime: d?.toISOString(),
-              startTimeLocal: d?.toLocaleString(),
-              slotNumber: s.SlotNumber ?? s.slotNumber,
-              employeeId: s.EmployeeId ?? s.employeeId
-            });
-          });
-        } else {
-          console.warn('WorkerFinalSchedule: No shifts returned from API for employeeId=', userId);
-          console.warn('WorkerFinalSchedule: This could mean:');
-          console.warn('  1. No shifts have been assigned to this employee yet');
-          console.warn('  2. The employeeId does not match any assigned shifts');
-        }
-        
-        // Filter shifts - use wide buffer to catch all relevant shifts
-        const raw = allRaw.filter(inCurrentWeek);
-        console.log('WorkerFinalSchedule: Shifts found in range', raw.length, 'out of', allRaw.length, 'total');
-        
-        // CRITICAL FIX: Show ALL shifts if ANY exist - NO DATE FILTERING
-        // This ensures workers ALWAYS see their assigned shifts
-        let shiftsToShow = allRaw; // Show ALL shifts, no filtering
-        
-        if (allRaw.length > 0) {
-          console.log('WorkerFinalSchedule: ✓✓✓ SHIFTS FOUND - Showing ALL', allRaw.length, 'shift(s) to worker');
-          console.log('WorkerFinalSchedule: Date filtering DISABLED to ensure worker sees their schedule');
-        }
-        
-        const mappedShifts = shiftsToShow.map(mapShift);
+
+        const mappedShifts: Shift[] = assigned.map((raw: Record<string, unknown>) => {
+          const mapped = mapApiShiftToShift(raw);
+          return {
+            id: mapped.id,
+            workerName: userName,
+            startTime: mapped.startTime,
+            endTime: mapped.endTime,
+            role: 'Employee',
+            date: String(raw.StartTime ?? raw.startTime ?? ''),
+            slotNumber: mapped.slotNumber ?? resolveSlotNumber(raw),
+          };
+        });
+
         setShifts(mappedShifts);
       } catch (err) {
         console.error('WorkerFinalSchedule: Error fetching shifts:', err);
@@ -283,7 +144,7 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
     window.addEventListener('schedulePublished', handleSchedulePublished);
     
     // Poll every 30 seconds to catch schedule updates
-    const interval = setInterval(fetchShifts, 30 * 1000);
+    const interval = setInterval(fetchShifts, 8 * 1000);
     
     return () => {
       clearInterval(interval);
@@ -314,11 +175,10 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
     }
   }, [shifts]);
 
-  // SlotNumber 1=Mon Morning, 2=Mon Evening, 3=Tue Morning, ... 14=Sun Evening
   const getShiftForSlot = (day: string, slot: 'morning' | 'evening') => {
     const dayIndex = DAYS_OF_WEEK.indexOf(day);
     if (dayIndex === -1) return undefined;
-    const wantSlotNumber = slot === 'morning' ? dayIndex * 2 + 1 : dayIndex * 2 + 2;
+    const wantSlotNumber = dayIndex * 2 + (slot === 'morning' ? 1 : 2);
     return shifts.find(s => s.slotNumber === wantSlotNumber);
   };
 

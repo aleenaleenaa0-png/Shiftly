@@ -92,7 +92,9 @@ namespace Backend.Controllers
 
         [HttpGet("for-employee")]
         [Authorize]
-        public async Task<ActionResult<IEnumerable<object>>> GetShiftsForEmployee([FromQuery] int employeeId)
+        public async Task<ActionResult<IEnumerable<object>>> GetShiftsForEmployee(
+            [FromQuery] int employeeId,
+            [FromQuery] DateTime? weekStart = null)
         {
             if (employeeId <= 0)
                 return BadRequest(new { error = "employeeId is required" });
@@ -110,7 +112,7 @@ namespace Backend.Controllers
             if (isEmployee && !isManager && authenticatedUserId != employeeId)
                 return Forbid();
 
-            return await GetShiftsForEmployeeInternal(employeeId, null);
+            return await GetShiftsForEmployeeInternal(employeeId, weekStart);
         }
 
         private async Task<ActionResult<IEnumerable<object>>> GetShiftsForEmployeeInternal(int employeeId, DateTime? weekStart)

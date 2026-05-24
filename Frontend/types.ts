@@ -27,6 +27,9 @@ export interface Shift {
 export interface ScheduleKPIs {
   totalCost: number;
   totalTargetSales: number;
-  efficiencyRatio: number; // sales / cost
+  projectedSales: number;
+  salesPerPayrollDollar: number;
   coveragePercentage: number;
+  filledShifts: number;
+  totalShifts: number;
 }
