@@ -32,7 +32,6 @@ import WorkerPortal from './components/WorkerPortal';
 import Login from './components/Login';
 import SignUp from './components/SignUp';
 import Logo from './components/Logo';
-import { getScheduleOptimizationInsights, getSmartSuggestion, autoGenerateSchedule } from './geminiService';
 import ProductivityWarningModal, {
   ProductivityWarningContext,
 } from './components/ProductivityWarningModal';
@@ -63,7 +62,7 @@ import {
   buildEmployeeAssignmentCounts,
   canAssignEmployeeToShift,
 } from './utils/scheduleLimits';
-import { runFastAutoSchedule } from './utils/autoSchedule';
+import { runFastAutoSchedule, pickBestEmployeeForShift } from './utils/autoSchedule';
 
 type Page = 'schedule' | 'employees' | 'availability' | 'users';
 
@@ -852,22 +851,43 @@ const App: React.FC = () => {
 
   const requestSmartSuggestion = async (shift: Shift) => {
     setSuggestionLoading(shift.id);
-    const result = await getSmartSuggestion(shift, employees);
-    if (result && result.includes('|')) {
-      const [empId] = result.split('|').map((s) => s.trim());
-      const emp = employees.find((e) => e.id === empId);
-      if (emp) {
-        const required = shift.targetSales || 0;
-        const projected = calculateProjectedThroughput(emp.productivityScore, shift);
-        if (required > 0 && !passesThroughputThreshold(projected, required)) {
-          setProductivityWarning({ employee: emp, shift });
-          setPendingAssignment({ shiftId: shift.id, employeeId: empId });
-        } else {
-          await executeAssignment(shift.id, empId);
-        }
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+
+    try {
+      const result = pickBestEmployeeForShift(
+        shift,
+        shifts,
+        employees,
+        getEmployeesAvailableForShift
+      );
+
+      if (!result.ok) {
+        notify(result.reason, 'error');
+        return;
       }
+
+      const { employee: emp, belowThroughputThreshold } = result;
+
+      if (belowThroughputThreshold) {
+        setProductivityWarning({ employee: emp, shift });
+        setPendingAssignment({ shiftId: shift.id, employeeId: emp.id });
+        notify(
+          `${emp.name} — תפוקה מתחת ליעד. אשר/י שיבוץ או בחר/י עובד/ת אחר/ת.`,
+          'info'
+        );
+        return;
+      }
+
+      await executeAssignment(shift.id, emp.id);
+      notify(`הצעה חכמה: ${emp.name} שובץ/ה למשמרת`, 'success');
+    } catch (err) {
+      console.error('Smart suggestion error:', err);
+      notify('שגיאה בהצעה החכמה', 'error');
+    } finally {
+      setSuggestionLoading(null);
     }
-    setSuggestionLoading(null);
   };
 
   const removeAssignment = async (shiftId: string) => {
@@ -1385,7 +1405,7 @@ const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, assignedEmployee, onDrop, 
                         type="button"
                         onClick={(e) => { e.stopPropagation(); onSuggest(); }}
                         className="absolute top-1 left-1 p-1 rounded bg-white border border-slate-200 text-slate-400 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity text-[10px]"
-                        title="הצעה חכמה"
+                        title="הצעה חכמה — עובד זמין עם התפוקה הגבוהה ביותר"
                     >
                         <i className="fas fa-wand-magic-sparkles"></i>
                     </button>
