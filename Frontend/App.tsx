@@ -1131,9 +1131,9 @@ const App: React.FC = () => {
       ) : currentPage === 'availability' ? (
         <EmployeeAvailability user={user} />
       ) : (
-        <main className="relative z-10 max-w-7xl mx-auto w-full px-4 lg:px-8 py-10 flex flex-col lg:flex-row gap-8">
+        <main className="relative z-10 max-w-[90rem] mx-auto w-full px-3 lg:px-6 py-5 flex flex-col lg:flex-row gap-5 items-start">
         <div className="flex-1 min-w-0">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
             <WeekNavigator weekMonday={weekMonday} onChange={setWeekMonday} />
             {schedulePublished && (
               <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-full dir-rtl">
@@ -1168,27 +1168,23 @@ const App: React.FC = () => {
             </div>
           )}
 
-          <div className="bg-white/80 backdrop-blur-2xl rounded-3xl shadow-2xl shadow-rose-500/10 border border-rose-200/50 overflow-hidden">
-            <div className="p-8 border-b border-rose-200 flex items-center justify-between bg-gradient-to-r from-white to-rose-50/50">
-                <div>
-                    <h2 className="text-xl font-black text-slate-800">לוח שיבוץ שבועי - <span className="text-2xl bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 bg-clip-text text-transparent">Shiftly</span></h2>
-                    <p className="text-sm text-slate-600 mt-1">גרור עובדים מהרשימה כדי לשבץ למשמרות או השתמש בשיבוץ האוטומטי</p>
-                    {employees.length > 0 && (
-                      <p className="text-xs text-green-600 font-bold mt-2">
-                        <i className="fas fa-check-circle mr-1"></i>
-                        {employees.length} employees loaded from database
-                      </p>
-                    )}
-                </div>
+          <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-lg border border-rose-200/50 overflow-hidden">
+            <div className="px-4 py-3 border-b border-rose-100 bg-rose-50/40">
+                <h2 className="text-base font-black text-slate-800 dir-rtl text-right">
+                  לוח שיבוץ שבועי — <span className="text-rose-600">Shiftly</span>
+                </h2>
+                <p className="text-xs text-slate-600 mt-0.5 dir-rtl text-right">
+                  גרור עובד מהרשימה או השתמש בשיבוץ אוטומטי
+                </p>
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[800px]">
+              <table className="w-full text-left border-collapse min-w-[640px] table-fixed">
                 <thead>
-                  <tr className="bg-gradient-to-r from-rose-50 to-purple-50">
-                    <th className="px-8 py-5 text-[11px] font-black text-slate-700 uppercase tracking-widest border-r border-rose-200 w-32">יום</th>
-                    <th className="px-8 py-5 text-[11px] font-black text-slate-700 uppercase tracking-widest">משמרת בוקר (09-15)</th>
-                    <th className="px-8 py-5 text-[11px] font-black text-slate-700 uppercase tracking-widest">משמרת ערב (15-21)</th>
+                  <tr className="bg-slate-50">
+                    <th className="px-3 py-2.5 text-[10px] font-bold text-slate-600 uppercase border-r border-rose-100 w-24">יום</th>
+                    <th className="px-3 py-2.5 text-[10px] font-bold text-slate-600 uppercase w-[42%]">בוקר 09–15</th>
+                    <th className="px-3 py-2.5 text-[10px] font-bold text-slate-600 uppercase w-[42%]">ערב 15–21</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-rose-100">
@@ -1214,10 +1210,10 @@ const App: React.FC = () => {
                       
                       return (
                         <tr key={day} className="group">
-                          <td className="px-8 py-10 font-extrabold text-slate-800 border-r border-rose-200 bg-rose-50/50 group-hover:bg-rose-100 transition-colors">
+                          <td className="px-3 py-3 text-sm font-bold text-slate-800 border-r border-rose-100 bg-rose-50/40 align-middle text-center">
                             {day}
                           </td>
-                          <td className="px-8 py-6">
+                          <td className="px-2 py-2 align-top">
                             {morningShift ? (
                               <ShiftSlot 
                                 shift={morningShift} 
@@ -1230,13 +1226,12 @@ const App: React.FC = () => {
                                 allEmployees={employees}
                               />
                             ) : (
-                              <div className="border-2 border-dashed border-rose-300 rounded-2xl p-6 text-center text-slate-400">
-                                <i className="fas fa-calendar-times mb-2"></i>
-                                <p className="text-xs">No morning shift</p>
+                              <div className="border border-dashed border-rose-200 rounded-lg p-3 text-center text-slate-400 text-[10px]">
+                                אין משמרת
                               </div>
                             )}
                           </td>
-                          <td className="px-8 py-6">
+                          <td className="px-2 py-2 align-top">
                             {afternoonShift ? (
                               <ShiftSlot 
                                 shift={afternoonShift} 
@@ -1251,7 +1246,7 @@ const App: React.FC = () => {
                             ) : (
                               <div className="border-2 border-dashed border-rose-300 rounded-2xl p-6 text-center text-slate-400">
                                 <i className="fas fa-calendar-times mb-2"></i>
-                                <p className="text-xs">No afternoon shift</p>
+                                <p className="text-[10px]">אין משמרת</p>
                               </div>
                             )}
                           </td>
@@ -1321,13 +1316,13 @@ const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, assignedEmployee, onDrop, 
                           normScore >= 7 ? 'text-orange-600 bg-orange-50' : 'text-red-600 bg-red-50';
 
         return (
-            <div className="relative group bg-white/90 backdrop-blur-sm border border-rose-200 rounded-2xl p-4 flex items-center shadow-lg hover:shadow-xl transition-all animate-in fade-in zoom-in duration-200 hover:scale-105">
-                <img src={assignedEmployee.avatar} className="w-12 h-12 rounded-full mr-4 border-2 border-rose-200 shadow-sm" />
+            <div className="relative group bg-white border border-rose-200 rounded-lg px-2.5 py-2 flex items-center gap-2 shadow-sm">
+                <img src={assignedEmployee.avatar} className="w-9 h-9 rounded-full border border-rose-200 shrink-0" alt="" />
                 <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-slate-800 truncate">{assignedEmployee.name}</p>
-                    <p className="text-xs text-slate-600 font-medium">${shift.targetSales.toLocaleString()} Target</p>
+                    <p className="text-xs font-bold text-slate-800 truncate">{assignedEmployee.name}</p>
+                    <p className="text-[10px] text-slate-500">יעד ${shift.targetSales.toLocaleString()}</p>
                 </div>
-                <div className={`ml-3 px-3 py-1 rounded-full text-xs font-black ${scoreColor}`}>
+                <div className={`shrink-0 px-2 py-0.5 rounded text-[10px] font-bold ${scoreColor}`}>
                     {normScore.toFixed(1)}/10
                 </div>
                 <button 
@@ -1365,53 +1360,50 @@ const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, assignedEmployee, onDrop, 
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={onDropHandler}
-            className="border-2 border-dashed border-rose-300 rounded-2xl p-6 flex flex-col items-center justify-center text-slate-400 hover:border-rose-400 hover:text-rose-500 hover:bg-rose-50 transition-all group min-h-[90px] relative cursor-pointer bg-white/50"
+            className="border border-dashed border-rose-200 rounded-lg px-2 py-2.5 flex flex-col items-center justify-center text-slate-500 hover:border-rose-300 hover:bg-rose-50/80 transition-colors group min-h-[4.5rem] relative cursor-pointer bg-white/80"
         >
             {isLoading ? (
-                <div className="flex flex-col items-center">
-                    <i className="fas fa-circle-notch fa-spin text-rose-500 mb-2"></i>
-                    <span className="text-[10px] font-bold uppercase">Thinking...</span>
+                <div className="flex items-center gap-1.5 text-rose-500">
+                    <i className="fas fa-circle-notch fa-spin text-xs"></i>
+                    <span className="text-[10px] font-medium">מחשב...</span>
                 </div>
             ) : (
                 <>
-                    <i className="fas fa-plus mb-2 opacity-30 group-hover:scale-125 transition-transform"></i>
-                    <span className="text-[10px] font-bold uppercase tracking-widest">
-                        {availableEmployees.length > 0 ? 'Drag available employee here' : 'Empty'}
-                    </span>
                     {availableEmployees.length > 0 ? (
-                        <div className="mt-2 w-full">
-                            <div className="flex items-center justify-center space-x-1 mb-1">
-                                <span className="text-[9px] text-green-600 font-bold">
-                                    <i className="fas fa-check-circle mr-1"></i>
-                                    {availableEmployees.length} available — drag from sidebar
-                                </span>
-                            </div>
-                            <div className="flex flex-wrap justify-center gap-1 mt-1">
-                                {availableEmployees.slice(0, 5).map((emp) => (
+                        <>
+                            <span className="text-[10px] font-bold text-slate-600 dir-rtl text-center leading-tight">
+                                גרור עובד לכאן
+                            </span>
+                            <span className="text-[9px] text-green-600 font-semibold mt-1 dir-rtl">
+                                {availableEmployees.length} זמינים
+                            </span>
+                            <div className="flex flex-wrap justify-center gap-0.5 mt-1 max-w-full">
+                                {availableEmployees.slice(0, 4).map((emp) => (
                                     <span
                                         key={emp.id}
-                                        className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-100 text-green-800 text-[9px] font-semibold border border-green-300"
+                                        className="px-1.5 py-0.5 rounded bg-green-50 text-green-800 text-[9px] font-medium border border-green-200"
                                         title={`${emp.name} — ${normalizeProductivityScore(emp.productivityScore).toFixed(1)}/10`}
                                     >
                                         {emp.name.split(' ')[0]}
                                     </span>
                                 ))}
-                                {availableEmployees.length > 5 && (
-                                    <span className="text-[9px] text-green-600 font-bold">+{availableEmployees.length - 5}</span>
+                                {availableEmployees.length > 4 && (
+                                    <span className="text-[9px] text-green-600">+{availableEmployees.length - 4}</span>
                                 )}
                             </div>
-                        </div>
+                        </>
                     ) : (
-                        <div className="mt-2 text-[9px] text-slate-400 italic text-center px-2">
-                            No one has set availability for this shift. Ask employees to set availability in the Worker Portal.
-                        </div>
+                        <span className="text-[10px] text-slate-400 dir-rtl text-center leading-snug px-1">
+                            אין זמינות למשמרת זו
+                        </span>
                     )}
                     <button 
+                        type="button"
                         onClick={(e) => { e.stopPropagation(); onSuggest(); }}
-                        className="absolute bottom-2 right-2 bg-white hover:bg-gradient-to-r hover:from-rose-500 hover:via-purple-500 hover:to-cyan-500 hover:text-white p-2 rounded-lg text-slate-400 transition-all opacity-0 group-hover:opacity-100 shadow-md pointer-events-auto"
-                        title="Smart Suggestion"
+                        className="absolute top-1 left-1 p-1 rounded bg-white border border-slate-200 text-slate-400 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity text-[10px]"
+                        title="הצעה חכמה"
                     >
-                        <i className="fas fa-wand-magic-sparkles text-xs"></i>
+                        <i className="fas fa-wand-magic-sparkles"></i>
                     </button>
                 </>
             )}

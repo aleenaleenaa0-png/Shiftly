@@ -99,22 +99,18 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
     }
 
     return (
-      <div className="mt-3 pt-3 border-t border-rose-200/50">
-        <div className="flex items-center mb-2">
-          <i className="fas fa-calendar-check text-green-500 text-[10px] mr-1.5"></i>
-          <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
-            Available Shifts ({availableShifts.length}):
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
+      <div className="mt-2 pt-2 border-t border-rose-100">
+        <p className="text-[9px] font-bold text-slate-500 mb-1 dir-rtl">
+          זמינות ({availableShifts.length})
+        </p>
+        <div className="flex flex-wrap gap-1 max-h-12 overflow-y-auto">
           {availableShifts.map((shift, idx) => (
             <span
               key={idx}
-              className="px-2 py-1 rounded-md text-[9px] font-bold bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border border-green-300 shadow-sm"
-              title={`Available for ${shift.day} ${shift.time}`}
+              className="px-1 py-0.5 rounded text-[8px] font-semibold bg-green-50 text-green-700 border border-green-200"
+              title={`${shift.day} ${shift.time}`}
             >
-              <span className="font-black">{shift.dayAbbrev}</span>{' '}
-              <span className="text-green-600">{shift.shortLabel}</span>
+              {shift.dayAbbrev} {shift.shortLabel}
             </span>
           ))}
         </div>
@@ -123,9 +119,9 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
   };
 
   return (
-    <div className="w-full lg:w-[26rem] flex-shrink-0">
-      <div className="bg-white/80 backdrop-blur-2xl rounded-3xl shadow-xl shadow-rose-500/10 border border-rose-200/50 p-5 lg:sticky lg:top-24 flex flex-col lg:max-h-[calc(100vh-7rem)]">
-        <h3 className="text-lg font-black text-slate-800 mb-2 flex items-center justify-between tracking-tight flex-shrink-0">
+    <div className="w-full lg:w-72 xl:w-80 flex-shrink-0">
+      <div className="bg-white/95 rounded-2xl shadow-md border border-rose-200/60 p-3 lg:sticky lg:top-20 flex flex-col max-h-[calc(100vh-5.5rem)]">
+        <h3 className="text-sm font-black text-slate-800 mb-2 flex items-center justify-between flex-shrink-0 dir-rtl">
           <span className="flex items-center">
             <i className="fas fa-users-rectangle mr-3 text-rose-500"></i>
             סגל עובדים
@@ -213,7 +209,7 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
             </button>
           </div>
         ) : (
-          <div className="space-y-3 overflow-y-auto flex-1 min-h-[min(60vh,28rem)] pr-1 -mr-1">
+          <div className="space-y-2 overflow-y-auto flex-1 min-h-0 pr-0.5">
             {filteredEmployees.map((emp) => {
               const normalized = normalizeProductivityScore(emp.productivityScore);
               const scoreColor =
@@ -229,54 +225,40 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
                   key={emp.id}
                   draggable
                   onDragStart={(e) => onDragStart(e, emp.id)}
-                  className="group p-4 rounded-xl border border-rose-200 bg-white/60 backdrop-blur-sm hover:border-rose-300 hover:bg-white hover:shadow-lg hover:shadow-rose-500/15 transition-all cursor-grab active:cursor-grabbing"
+                  className="group p-2.5 rounded-lg border border-rose-100 bg-white hover:border-rose-200 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing"
                 >
-                  <div className="flex items-center">
-                    <div className="relative">
+                  <div className="flex items-center gap-2">
+                    <div className="relative shrink-0">
                       <img
                         src={emp.avatar}
                         alt={emp.name}
-                        className="w-12 h-12 rounded-full bg-slate-200 border-2 border-white shadow-sm"
+                        className="w-9 h-9 rounded-full bg-slate-200 border border-white"
                       />
                       <div
                         className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-white ${scoreColor}`}
                       />
                     </div>
-                    <div className="flex-1 min-w-0 ml-4">
-                      <p className="text-sm font-black text-slate-800 truncate">{emp.name}</p>
-                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                        {emp.role}
-                      </p>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-slate-800 truncate">{emp.name}</p>
+                      <p className="text-[9px] text-slate-500">{emp.hourlyRate}₪/שעה</p>
                     </div>
-                    <div className="text-right">
-                      <div className="text-lg font-black text-slate-800 leading-none">
-                        {normalized.toFixed(1)}
-                      </div>
-                      <div className="text-[9px] text-slate-500 font-bold uppercase mt-1">/ 10 יעילות</div>
+                    <div className="text-left shrink-0">
+                      <span className="text-sm font-black text-slate-800">{normalized.toFixed(1)}</span>
+                      <span className="text-[8px] text-slate-500 block">/10</span>
                     </div>
                   </div>
-                  <div className="mt-3 pt-3 border-t border-rose-200">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center text-[11px] font-bold text-slate-500">
-                        <i className="fas fa-dollar-sign mr-1"></i>
-                        <span>{emp.hourlyRate}/שעה</span>
-                      </div>
+                  <div className="mt-1.5 flex items-center justify-between gap-1">
                       {employeeAvailabilityCount && (
                         <span
-                          className={`text-[10px] font-bold px-2 py-1 rounded-full transition-all ${
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
                             availCount > 0
-                              ? 'bg-green-100 text-green-700 border border-green-300 shadow-sm'
+                              ? 'bg-green-100 text-green-700'
                               : 'bg-slate-100 text-slate-500'
                           }`}
-                          title={`Available for ${availCount} shift(s)`}
                         >
-                          <i
-                            className={`fas ${availCount > 0 ? 'fa-check-circle' : 'fa-calendar-times'} mr-1`}
-                          />
-                          {availCount} shifts
+                          {availCount} משמרות
                         </span>
                       )}
-                    </div>
                     {renderAvailabilityBadges(emp)}
                   </div>
                 </div>

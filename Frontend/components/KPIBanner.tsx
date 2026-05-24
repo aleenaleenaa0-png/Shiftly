@@ -11,66 +11,61 @@ const KPIBanner: React.FC<KPIBannerProps> = ({ kpis }) => {
     kpis.salesPerPayrollDollar > 0 ? kpis.salesPerPayrollDollar.toFixed(0) : '—';
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-      <div className="bg-white/80 backdrop-blur-2xl p-6 rounded-2xl shadow-xl shadow-rose-500/10 border border-rose-200/50 flex flex-col">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-slate-600 text-sm font-semibold">Payroll (assigned shifts)</span>
-          <i className="fas fa-dollar-sign text-rose-400" />
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+      <div className="bg-white/90 p-4 rounded-xl shadow-sm border border-rose-100 flex flex-col">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-slate-600 text-xs font-semibold dir-rtl">שכר (משובץ)</span>
+          <i className="fas fa-dollar-sign text-rose-400 text-sm" />
         </div>
-        <span className="text-3xl font-black text-slate-800">
+        <span className="text-xl font-black text-slate-800">
           ${kpis.totalCost.toLocaleString()}
         </span>
-        <p className="mt-2 text-xs text-slate-500">
-          Wages for {kpis.filledShifts} filled shift{kpis.filledShifts === 1 ? '' : 's'} this week
+        <p className="mt-1 text-[10px] text-slate-500 dir-rtl">
+          {kpis.filledShifts} משמרות
         </p>
       </div>
 
-      <div className="bg-white/80 backdrop-blur-2xl p-6 rounded-2xl shadow-xl shadow-green-500/10 border border-green-200/50 flex flex-col">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-slate-600 text-sm font-semibold">Week sales target</span>
-          <i className="fas fa-chart-line text-green-500" />
+      <div className="bg-white/90 p-4 rounded-xl shadow-sm border border-green-100 flex flex-col">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-slate-600 text-xs font-semibold dir-rtl">יעד מכירות</span>
+          <i className="fas fa-chart-line text-green-500 text-sm" />
         </div>
-        <span className="text-3xl font-black text-slate-800">
+        <span className="text-xl font-black text-slate-800">
           ${kpis.totalTargetSales.toLocaleString()}
         </span>
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="mt-1 text-[10px] text-slate-500 dir-rtl">
           {kpis.filledShifts > 0
-            ? `Expected from staff: $${kpis.projectedSales.toLocaleString()}`
-            : 'Assign workers to see expected sales'}
+            ? `צפי: $${kpis.projectedSales.toLocaleString()}`
+            : 'שבץ עובדים לצפי'}
         </p>
       </div>
 
-      <div className="bg-gradient-to-br from-rose-100 to-purple-100 backdrop-blur-2xl p-6 rounded-2xl shadow-xl shadow-purple-500/20 border border-purple-300/50 flex flex-col">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-slate-700 text-sm font-semibold">Target sales per $1 payroll</span>
-          <i className="fas fa-star text-yellow-500" />
+      <div className="bg-white/90 p-4 rounded-xl shadow-sm border border-purple-100 flex flex-col">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-slate-600 text-xs font-semibold dir-rtl">מכירות לש״ח שכר</span>
+          <i className="fas fa-star text-yellow-500 text-sm" />
         </div>
-        <span className="text-3xl font-black text-slate-800">{salesRatio} : 1</span>
-        <p className="mt-2 text-xs text-slate-600">
-          For each $1 in wages, the week targets ${salesRatio} in sales
-        </p>
+        <span className="text-xl font-black text-slate-800">{salesRatio} : 1</span>
+        <p className="mt-1 text-[10px] text-slate-500 dir-rtl">יחס שבועי</p>
       </div>
 
-      <div className="bg-white/80 backdrop-blur-2xl p-6 rounded-2xl shadow-xl shadow-cyan-500/10 border border-cyan-200/50 flex flex-col">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-slate-600 text-sm font-semibold">Shifts filled</span>
-          <i className="fas fa-calendar-check text-cyan-500" />
+      <div className="bg-white/90 p-4 rounded-xl shadow-sm border border-cyan-100 flex flex-col">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-slate-600 text-xs font-semibold dir-rtl">כיסוי משמרות</span>
+          <i className="fas fa-calendar-check text-cyan-500 text-sm" />
         </div>
-        <span className="text-3xl font-black text-slate-800">
-          {kpis.filledShifts} / {kpis.totalShifts}
+        <span className="text-xl font-black text-slate-800">
+          {kpis.filledShifts}/{kpis.totalShifts}
         </span>
-        <div className="mt-2">
-          <div className="flex-1 bg-rose-100 rounded-full h-2 overflow-hidden">
-            <div
-              className="bg-gradient-to-r from-rose-400 via-purple-400 to-cyan-400 h-2 rounded-full transition-all"
-              style={{ width: `${kpis.coveragePercentage}%` }}
-            />
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            {kpis.filledShifts} of {kpis.totalShifts} shifts have a worker
-            {openShifts > 0 ? ` · ${openShifts} still open` : ''}
-          </p>
+        <div className="mt-1.5 bg-rose-100 rounded-full h-1.5 overflow-hidden">
+          <div
+            className="bg-rose-400 h-1.5 rounded-full transition-all"
+            style={{ width: `${kpis.coveragePercentage}%` }}
+          />
         </div>
+        <p className="text-[10px] text-slate-500 mt-1 dir-rtl">
+          {openShifts > 0 ? `${openShifts} פתוחות` : 'מלא'}
+        </p>
       </div>
     </div>
   );
