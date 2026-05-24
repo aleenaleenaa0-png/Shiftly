@@ -110,6 +110,65 @@ namespace Backend.Services
             Console.WriteLine($"✓ Seeded {shifts.Count} shifts for week {weekStart:yyyy-MM-dd} (Shift_ID 1..{shifts.Count} when DB was empty)");
         }
 
+        public static string NormalizeOleDbConnectionString(string connectionString)
+        {
+            var raw = connectionString?.Trim()
+                ?? "Data Source=C:\\Users\\aleen\\Documents\\ShiftlyDB.accdb";
+            if (raw.Contains("Provider=", StringComparison.OrdinalIgnoreCase))
+                return raw;
+            var dataSource = raw.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase)
+                ? raw
+                : "Data Source=" + raw;
+            return "Provider=Microsoft.ACE.OLEDB.12.0;" + dataSource + ";";
+        }
+
+        /// <summary>יוצר 14 משמרות לשבוע (OleDb בלבד — נמנע משגיאת #Dual ב-Access).</summary>
+        public static void EnsureFourteenShiftsOleDb(OleDbConnection conn, DateTime weekStart)
+        {
+            var weekStartDate = GetWeekStart(weekStart);
+            var weekEnd = weekStartDate.AddDays(7);
+            for (int day = 0; day < 7; day++)
+            {
+                var date = weekStartDate.AddDays(day).Date;
+                for (int part = 0; part < 2; part++)
+                {
+                    int slotNum = day * 2 + part + 1;
+                    var start = date.AddHours(part == 0 ? 9 : 15);
+                    var end = date.AddHours(part == 0 ? 15 : 21);
+                    object? existing = null;
+                    using (var check = conn.CreateCommand())
+                    {
+                        check.CommandText = @"SELECT TOP 1 Shift_ID FROM Shifts 
+WHERE Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ?";
+                        check.Parameters.Add(new OleDbParameter("@p1", slotNum));
+                        check.Parameters.Add(new OleDbParameter("@p2", weekStartDate));
+                        check.Parameters.Add(new OleDbParameter("@p3", weekEnd));
+                        existing = check.ExecuteScalar();
+                    }
+                    if (existing != null && existing != DBNull.Value)
+                        continue;
+                    using var ins = conn.CreateCommand();
+                    ins.CommandText = @"INSERT INTO Shifts (Shift_StartTime, Shift_EndTime, Shift_ReqThroughput, Shift_SlotNumber) VALUES (?, ?, ?, ?)";
+                    ins.Parameters.Add(new OleDbParameter("@p1", start));
+                    ins.Parameters.Add(new OleDbParameter("@p2", end));
+                    ins.Parameters.Add(new OleDbParameter("@p3", (decimal)(part == 0 ? 2500 : 3500)));
+                    ins.Parameters.Add(new OleDbParameter("@p4", slotNum));
+                    ins.ExecuteNonQuery();
+                }
+            }
+        }
+
+        /// <summary>יוצר 14 משמרות לשבוע הנתון (אם חסר) — ללא EF, בטוח ל-Access.</summary>
+        public static async Task EnsureFourteenShiftsForWeekAsync(string connectionString, DateTime weekStart)
+        {
+            var weekStartDate = GetWeekStart(weekStart);
+            var connStr = NormalizeOleDbConnectionString(connectionString);
+            using var conn = new OleDbConnection(connStr);
+            await conn.OpenAsync();
+            EnsureFourteenShiftsOleDb(conn, weekStartDate);
+            Console.WriteLine($"✓ Ensured 14 shifts for week {weekStartDate:yyyy-MM-dd} (OleDb)");
+        }
+
         private static void TryResetShiftIdentity(string connectionString)
         {
             try

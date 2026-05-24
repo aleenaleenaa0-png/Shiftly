@@ -47,7 +47,7 @@ namespace Backend.Controllers
                     .CountAsync();
 
                 if (count != 14)
-                    await ShiftBootstrap.ResetAndSeedCurrentWeekAsync(_db, ConnectionString, forceReset: false);
+                    await ShiftBootstrap.EnsureFourteenShiftsForWeekAsync(ConnectionString, weekStartDate);
 
                 var shifts = await _db.Shifts
                     .Where(s => s.StartTime >= weekStartDate && s.StartTime < weekEnd

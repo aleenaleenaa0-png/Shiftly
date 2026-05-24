@@ -129,7 +129,7 @@ const WorkerPortal: React.FC<WorkerPortalProps> = ({ user, onLogout }) => {
         </div>
 
         {activeTab === 'availability' ? (
-          <WorkerAvailabilityPicker userId={user.userId} />
+          <WorkerAvailabilityPicker userId={user.userId} weekMonday={weekMonday} />
         ) : (
           <WorkerFinalSchedule
             userName={user.fullName}

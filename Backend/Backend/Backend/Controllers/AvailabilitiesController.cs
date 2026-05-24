@@ -203,7 +203,10 @@ namespace Backend.Controllers
                 if (!connStr.Trim().Contains("Provider=", StringComparison.OrdinalIgnoreCase))
                     connStr = "Provider=Microsoft.ACE.OLEDB.12.0;" + (connStr.Trim().StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) ? connStr.Trim() : "Data Source=" + connStr.Trim()) + ";";
 
-                var result = await Task.Run(() => SetEmployeeAvailabilityWithOleDb(connStr, dto.EmployeeId, dto.SlotNumber, dto.IsAvailable));
+                var weekMonday = ShiftBootstrap.GetWeekStart(
+                    string.IsNullOrWhiteSpace(dto.WeekStart) ? null : DateTime.Parse(dto.WeekStart));
+                var result = await Task.Run(() =>
+                    SetEmployeeAvailabilityWithOleDb(connStr, dto.EmployeeId, dto.SlotNumber, dto.IsAvailable, weekMonday));
                 if (result.Error != null)
                     return result.NotFound ? NotFound(new { error = result.Error }) : StatusCode(500, new { error = "Failed to set employee availability", message = result.Error });
                 return Ok(result.Response);
@@ -218,7 +221,8 @@ namespace Backend.Controllers
         }
 
         /// <summary>Runs set-availability logic with raw OleDb to avoid EF Core Jet #Dual.</summary>
-        private static (object? Response, string? Error, bool NotFound) SetEmployeeAvailabilityWithOleDb(string connectionString, int employeeId, int slotNumber, bool isAvailable)
+        private static (object? Response, string? Error, bool NotFound) SetEmployeeAvailabilityWithOleDb(
+            string connectionString, int employeeId, int slotNumber, bool isAvailable, DateTime weekMonday)
         {
             using var conn = new OleDbConnection(connectionString);
             conn.Open();
@@ -232,11 +236,9 @@ namespace Backend.Controllers
                     return (null, "Employee not found", true);
             }
 
-            var today = DateTime.Today;
-            var monday = today.AddDays(-(int)today.DayOfWeek + 1);
-            if (today.DayOfWeek == DayOfWeek.Sunday) monday = today.AddDays(-6);
-            monday = monday.Date;
+            var monday = ShiftBootstrap.GetWeekStart(weekMonday);
             var weekEnd = monday.AddDays(7);
+            ShiftBootstrap.EnsureFourteenShiftsOleDb(conn, monday);
 
             int shiftId = 0;
             using (var cmd = conn.CreateCommand())
@@ -250,7 +252,7 @@ ORDER BY Shift_StartTime";
                 var o = cmd.ExecuteScalar();
                 if (o == null || o == DBNull.Value)
                 {
-                    EnsureFourteenShiftsOleDb(conn, monday);
+                    ShiftBootstrap.EnsureFourteenShiftsOleDb(conn, monday);
                     using var retryCmd = conn.CreateCommand();
                     retryCmd.CommandText = @"SELECT TOP 1 Shift_ID FROM Shifts 
 WHERE Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ? AND Shift_ID > 0 
@@ -412,41 +414,6 @@ ORDER BY Shift_StartTime";
             }
             
             return (new { slotNumber, isAvailable, availabilityId = newId, updated = false }, null, false);
-        }
-
-        /// <summary>Create 14 shifts for the store/week (Mon AM, Mon PM ... Sun AM, Sun PM) via OleDb. No EF = no #Dual.</summary>
-        private static void EnsureFourteenShiftsOleDb(OleDbConnection conn, DateTime weekStart)
-        {
-            var weekEnd = weekStart.AddDays(7);
-            for (int day = 0; day < 7; day++)
-            {
-                var date = weekStart.AddDays(day).Date;
-                for (int part = 0; part < 2; part++)
-                {
-                    int slotNum = day * 2 + part + 1;
-                    var start = date.AddHours(part == 0 ? 9 : 15);
-                    var end = date.AddHours(part == 0 ? 15 : 21);
-                    object? existing = null;
-                    using (var check = conn.CreateCommand())
-                    {
-                        check.CommandText = @"SELECT TOP 1 Shift_ID FROM Shifts 
-WHERE Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ?";
-                        check.Parameters.Add(new OleDbParameter("@p1", slotNum));
-                        check.Parameters.Add(new OleDbParameter("@p2", weekStart));
-                        check.Parameters.Add(new OleDbParameter("@p3", weekEnd));
-                        existing = check.ExecuteScalar();
-                    }
-                    if (existing != null && existing != DBNull.Value)
-                        continue;
-                    using var ins = conn.CreateCommand();
-                    ins.CommandText = @"INSERT INTO Shifts (Shift_StartTime, Shift_EndTime, Shift_ReqThroughput, Shift_SlotNumber) VALUES (?, ?, ?, ?)";
-                    ins.Parameters.Add(new OleDbParameter("@p1", start));
-                    ins.Parameters.Add(new OleDbParameter("@p2", end));
-                    ins.Parameters.Add(new OleDbParameter("@p3", (decimal)(part == 0 ? 2500 : 3500)));
-                    ins.Parameters.Add(new OleDbParameter("@p4", slotNum));
-                    ins.ExecuteNonQuery();
-                }
-            }
         }
 
         // GET: api/Availabilities/for-shift/{shiftId}
@@ -737,13 +704,18 @@ WHERE Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ?";
         // Returns availability for slots 1-14 so the UI can show saved state after refresh.
         [HttpGet("all-for-employee/{employeeId}")]
         [HttpGet("employee/{employeeId}")]
-        public async Task<ActionResult<object>> GetAllAvailabilityForEmployee(int employeeId)
+        public async Task<ActionResult<object>> GetAllAvailabilityForEmployee(
+            int employeeId,
+            [FromQuery] DateTime? weekStart = null)
         {
             try
             {
                 var employee = await _db.Employees.FindAsync(employeeId);
                 if (employee == null)
                     return NotFound(new { error = "Employee not found" });
+
+                var weekStartDate = ShiftBootstrap.GetWeekStart(weekStart);
+                var weekEnd = weekStartDate.AddDays(7);
 
                 // CRITICAL FIX: Availability must persist across weeks even when shifts are deleted/recreated.
                 // Use raw SQL to get ALL availability records and match with shifts (including deleted ones if they still exist in DB).
@@ -759,6 +731,8 @@ WHERE Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ?";
                 {
                     using var conn = new System.Data.OleDb.OleDbConnection(connectionString);
                     await conn.OpenAsync();
+
+                    ShiftBootstrap.EnsureFourteenShiftsOleDb(conn, weekStartDate);
                     
                     // Get ALL availability records for this employee, with SlotNumber from Shifts table
                     // LEFT JOIN ensures we get availability even if shift was deleted (SlotNumber will be NULL)
@@ -767,10 +741,13 @@ WHERE Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ?";
                     cmd.CommandText = @"
                         SELECT a.AvailabilityID, a.ShiftId, a.IsAvailable, s.Shift_SlotNumber
                         FROM Availabilities a
-                        LEFT JOIN Shifts s ON a.ShiftId = s.Shift_ID
+                        INNER JOIN Shifts s ON a.ShiftId = s.Shift_ID
                         WHERE a.EmployeeId = ?
+                        AND s.Shift_StartTime >= ? AND s.Shift_StartTime < ?
                         ORDER BY a.AvailabilityID DESC";
                     cmd.Parameters.Add(new System.Data.OleDb.OleDbParameter("@p1", employeeId));
+                    cmd.Parameters.Add(new System.Data.OleDb.OleDbParameter("@p2", weekStartDate));
+                    cmd.Parameters.Add(new System.Data.OleDb.OleDbParameter("@p3", weekEnd));
                     
                     Console.WriteLine($"[GetAllAvailabilityForEmployee] Querying database for EmployeeId={employeeId}");
                     
@@ -814,7 +791,8 @@ WHERE Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ?";
                     // Fallback to EF Core if connection string not available
                     var allAvailabilities = await _db.Availabilities
                         .Where(a => a.EmployeeId == employee.EmployeeId)
-                        .Join(_db.Shifts.Where(s => s.SlotNumber >= 1 && s.SlotNumber <= 14),
+                        .Join(_db.Shifts.Where(s => s.SlotNumber >= 1 && s.SlotNumber <= 14
+                            && s.StartTime >= weekStartDate && s.StartTime < weekEnd),
                             a => a.ShiftId,
                             s => s.ShiftId,
                             (a, s) => new { a.ShiftId, s.SlotNumber, a.IsAvailable, a.AvailabilityId })
@@ -866,7 +844,12 @@ WHERE Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ?";
                     Console.WriteLine($"[GetAllAvailabilityForEmployee] ⚠ EmployeeId={employeeId}: NO AVAILABILITY FOUND");
                 }
 
-                return Ok(new { employeeId = employeeId, availabilityMap = availabilityMap });
+                return Ok(new
+                {
+                    employeeId,
+                    weekStart = weekStartDate.ToString("yyyy-MM-dd"),
+                    availabilityMap
+                });
             }
             catch (Exception ex)
             {
@@ -897,7 +880,7 @@ WHERE Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ?";
 
                 if (currentShifts.Count != 14)
                 {
-                    await ShiftBootstrap.ResetAndSeedCurrentWeekAsync(_db, connStr, forceReset: false);
+                    await ShiftBootstrap.EnsureFourteenShiftsForWeekAsync(connStr, weekStartDate);
                     currentShifts = await _db.Shifts
                         .Where(s => s.StartTime >= weekStartDate && s.StartTime < weekEnd
                             && s.SlotNumber >= 1 && s.SlotNumber <= 14)
@@ -918,7 +901,10 @@ WHERE Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ?";
                         FROM Availabilities a
                         INNER JOIN Shifts s ON a.ShiftId = s.Shift_ID
                         WHERE s.Shift_SlotNumber >= 1 AND s.Shift_SlotNumber <= 14
+                        AND s.Shift_StartTime >= ? AND s.Shift_StartTime < ?
                         ORDER BY a.EmployeeId, s.Shift_SlotNumber, a.AvailabilityID DESC";
+                    cmd.Parameters.Add(new OleDbParameter("@ws", weekStartDate));
+                    cmd.Parameters.Add(new OleDbParameter("@we", weekEnd));
                     using var reader = await cmd.ExecuteReaderAsync();
                     while (await reader.ReadAsync())
                     {
@@ -1084,35 +1070,6 @@ WHERE Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ?";
             }
         }
 
-        private async Task EnsureFourteenShiftsForWeek(DateTime weekStart)
-        {
-            var weekEnd = weekStart.AddDays(7);
-            var shiftsWithSlot = await _db.Shifts
-                .Where(s => s.StartTime >= weekStart && s.StartTime < weekEnd && s.SlotNumber >= 1 && s.SlotNumber <= 14)
-                .CountAsync();
-            if (shiftsWithSlot >= 14) return;
-
-            for (int day = 0; day < 7; day++)
-            {
-                var date = weekStart.AddDays(day).Date;
-                for (int part = 0; part < 2; part++)
-                {
-                    int slotNumber = day * 2 + part + 1;
-                    var start = date.AddHours(part == 0 ? 9 : 15);
-                    var end = date.AddHours(part == 0 ? 15 : 21);
-                    var exists = await _db.Shifts.AnyAsync(s => s.SlotNumber == slotNumber && s.StartTime >= weekStart && s.StartTime < weekEnd);
-                    if (exists) continue;
-                    _db.Shifts.Add(new Shift
-                    {
-                        SlotNumber = slotNumber,
-                        StartTime = start,
-                        EndTime = end,
-                        RequiredProductivity = part == 0 ? 2500 : 3500
-                    });
-                }
-            }
-            await _db.SaveChangesAsync();
-        }
     }
 
     public class CreateAvailabilityDto
@@ -1135,6 +1092,8 @@ WHERE Shift_SlotNumber = ? AND Shift_StartTime >= ? AND Shift_StartTime < ?";
         public int EmployeeId { get; set; }
         public int SlotNumber { get; set; } // 1-14: which shift in the week (Monday AM=1 ... Sunday PM=14)
         public bool IsAvailable { get; set; }
+        /// <summary>Monday of target week (yyyy-MM-dd). Defaults to current week if omitted.</summary>
+        public string? WeekStart { get; set; }
     }
 
 }

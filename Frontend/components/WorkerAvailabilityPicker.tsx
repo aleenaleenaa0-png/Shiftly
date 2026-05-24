@@ -2,8 +2,9 @@
  * WorkerAvailabilityPicker.tsx — اختيار التوفر داخل WorkerPortal
  * نفس منطق EmployeeAvailability: حفظ كل فتحة في Access عبر API.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { DAYS } from '../constants';
+import { formatWeekStartParam, formatWeekLabel } from '../utils/week';
 
 const DAYS_OF_WEEK = DAYS;
 
@@ -11,9 +12,14 @@ type SlotStatus = 'Available' | 'Busy' | 'Neutral';
 
 interface WorkerAvailabilityPickerProps {
   userId: number;
+  weekMonday: Date;
 }
 
-const WorkerAvailabilityPicker: React.FC<WorkerAvailabilityPickerProps> = ({ userId }) => {
+const WorkerAvailabilityPicker: React.FC<WorkerAvailabilityPickerProps> = ({
+  userId,
+  weekMonday,
+}) => {
+  const weekParam = formatWeekStartParam(weekMonday);
   // Validate userId on mount
   useEffect(() => {
     if (!userId || userId <= 0) {
@@ -46,24 +52,39 @@ const WorkerAvailabilityPicker: React.FC<WorkerAvailabilityPickerProps> = ({ use
     return dayIndex * 2 + (part === 'morning' ? 1 : 2);
   };
 
-  // Load existing availability from backend (availabilityMap by slot 1-14)
-  const loadAvailability = async () => {
+  const resetSelections = useCallback(() => {
+    setSelections(
+      DAYS_OF_WEEK.reduce(
+        (acc, day) => ({
+          ...acc,
+          [day]: { morning: 'Neutral' as SlotStatus, evening: 'Neutral' as SlotStatus },
+        }),
+        {} as Record<string, Record<'morning' | 'evening', SlotStatus>>
+      )
+    );
+  }, []);
+
+  // Load existing availability from backend (availabilityMap by slot 1-14) for selected week
+  const loadAvailability = useCallback(async () => {
     try {
       setLoading(true);
       console.log('═══════════════════════════════════════════════════════');
       console.log('WorkerAvailabilityPicker: 🔄 LOADING AVAILABILITY FROM DATABASE');
       console.log(`  UserId (EmployeeId): ${userId}`);
-      console.log(`  Type: ${typeof userId}`);
+      console.log(`  Week: ${weekParam}`);
       console.log('═══════════════════════════════════════════════════════');
       
-      const response = await fetch(`/api/availabilities/employee/${userId}`, {
-        method: 'GET',
-        credentials: 'include',
-        cache: 'no-cache',
-        headers: {
-          'Accept': 'application/json'
+      const response = await fetch(
+        `/api/availabilities/employee/${userId}?weekStart=${encodeURIComponent(weekParam)}`,
+        {
+          method: 'GET',
+          credentials: 'include',
+          cache: 'no-cache',
+          headers: {
+            Accept: 'application/json',
+          },
         }
-      });
+      );
       
       console.log(`WorkerAvailabilityPicker: API Response - status=${response.status}, statusText=${response.statusText}, ok=${response.ok}`);
       
@@ -115,28 +136,28 @@ const WorkerAvailabilityPicker: React.FC<WorkerAvailabilityPickerProps> = ({ use
         // Don't show alert on 404 - just means no availability saved yet
         if (response.status !== 404) {
           console.error('WorkerAvailabilityPicker: Unexpected error loading availability');
-          alert(`Failed to load availability: ${response.status} ${errorText}\n\nPlease try refreshing the page.`);
+          resetSelections();
         } else {
           console.log('WorkerAvailabilityPicker: No availability found (404) - this is normal for first-time users');
         }
       }
     } catch (err) {
       console.error('WorkerAvailabilityPicker: ❌ Exception loading availability:', err);
-      alert(`Error loading availability: ${err instanceof Error ? err.message : 'Unknown error'}\n\nPlease try refreshing the page.`);
+      resetSelections();
     } finally {
       setLoading(false);
       console.log('WorkerAvailabilityPicker: Load complete');
     }
-  };
+  }, [userId, weekParam, resetSelections]);
 
   useEffect(() => {
     if (userId && userId > 0) {
-      console.log('WorkerAvailabilityPicker: Component mounted/updated, loading availability for userId=', userId);
-      loadAvailability();
+      resetSelections();
+      void loadAvailability();
     } else {
       console.warn('WorkerAvailabilityPicker: Invalid userId, not loading availability:', userId);
     }
-  }, [userId]);
+  }, [userId, weekMonday, loadAvailability, resetSelections]);
 
   const toggleSlot = (day: string, slot: 'morning' | 'evening') => {
     const next: Record<SlotStatus, SlotStatus> = {
@@ -189,9 +210,10 @@ const WorkerAvailabilityPicker: React.FC<WorkerAvailabilityPickerProps> = ({ use
         
         try {
           const requestBody = {
-            employeeId: Number(userId), // Ensure it's a number
+            employeeId: Number(userId),
             slotNumber: Number(slotNumber),
-            isAvailable: Boolean(isAvailable)
+            isAvailable: Boolean(isAvailable),
+            weekStart: weekParam,
           };
           
           console.log(`WorkerAvailabilityPicker: Request body for slot ${slotNumber}:`, requestBody);
@@ -257,11 +279,14 @@ const WorkerAvailabilityPicker: React.FC<WorkerAvailabilityPickerProps> = ({ use
           console.log('WorkerAvailabilityPicker: ✓ Availability reloaded - verifying it was saved correctly');
           
           // Verify the reloaded data matches what we saved
-          const response = await fetch(`/api/availabilities/employee/${userId}`, {
+          const response = await fetch(
+            `/api/availabilities/employee/${userId}?weekStart=${encodeURIComponent(weekParam)}`,
+            {
             method: 'GET',
             credentials: 'include',
             cache: 'no-cache'
-          });
+          }
+          );
           
           if (response.ok) {
             const data = await response.json();
@@ -303,8 +328,9 @@ const WorkerAvailabilityPicker: React.FC<WorkerAvailabilityPickerProps> = ({ use
     <div className="glass-card rounded-[2.5rem] p-10 shadow-2xl border border-white">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
         <div>
-          <h2 className="text-3xl font-black text-gray-800">Set Availability</h2>
-          <p className="text-sm font-medium text-gray-400 mt-1">Tap slots to toggle: Neutral ➔ Available ➔ Busy</p>
+          <h2 className="text-3xl font-black text-gray-800 dir-rtl text-right">זמינות לשבוע</h2>
+          <p className="text-sm font-bold text-indigo-600 mt-1 dir-rtl">{formatWeekLabel(weekMonday)}</p>
+          <p className="text-sm font-medium text-gray-400 mt-1 dir-rtl text-right">לחץ על משמרת: ריק → זמין/ת → לא זמין/ה</p>
         </div>
         <div className="flex gap-4">
           <div className="flex items-center gap-2">
