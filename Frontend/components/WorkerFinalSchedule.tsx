@@ -18,19 +18,20 @@ interface Shift {
 interface WorkerFinalScheduleProps {
   userName: string;
   userId: number;
+  weekMonday: Date;
 }
 
 import { DAYS } from '../constants';
 import {
   formatWeekStartParam,
-  getWeekMonday,
+  formatWeekLabel,
   mapApiShiftToShift,
   resolveSlotNumber,
 } from '../utils/week';
 
 const DAYS_OF_WEEK = DAYS;
 
-const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, userId }) => {
+const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, userId, weekMonday }) => {
   const [insights, setInsights] = useState<string | null>(null);
   const [loadingInsights, setLoadingInsights] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
@@ -43,7 +44,7 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
   // Poll more frequently so workers see updates when manager publishes
   useEffect(() => {
     const fetchPublishStatus = () => {
-      const weekParam = formatWeekStartParam(getWeekMonday());
+      const weekParam = formatWeekStartParam(weekMonday);
       fetch(`/api/schedule/publish/status?weekStart=${weekParam}`, { credentials: 'include' })
         .then(res => res.ok ? res.json() : null)
         .then(data => {
@@ -75,14 +76,14 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
     const interval = setInterval(fetchPublishStatus, 30 * 1000);
     
     return () => clearInterval(interval);
-  }, []);
+  }, [weekMonday]);
 
   useEffect(() => {
     const fetchShifts = async () => {
       if (!userId) return;
       try {
         setLoading(true);
-        const weekParam = formatWeekStartParam(getWeekMonday());
+        const weekParam = formatWeekStartParam(weekMonday);
         const url = `/api/shifts?weekStart=${weekParam}`;
         const res = await fetch(url, { credentials: 'include', cache: 'no-cache' });
 
@@ -150,7 +151,7 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
       clearInterval(interval);
       window.removeEventListener('schedulePublished', handleSchedulePublished);
     };
-  }, [userId, userName]);
+  }, [userId, userName, weekMonday]);
 
   useEffect(() => {
     if (shifts.length > 0) {
@@ -200,10 +201,12 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
       <div className="flex justify-between items-center mb-10">
         <div>
           <h2 className="text-3xl font-black text-gray-800 flex items-center gap-3">
-             <span className="text-pink-500 italic">Shiftly</span> — My Schedule
+             <span className="text-pink-500 italic">Shiftly</span> — הלוח שלי
           </h2>
-          <p className="text-sm font-medium text-gray-400 mt-1">
-            {schedulePublished ? 'Your manager has shared this schedule with you' : 'Viewing your schedule for this week'}
+          <p className="text-sm font-medium text-gray-400 mt-1 dir-rtl">
+            {schedulePublished
+              ? 'המנהל פרסם את הלוח — המשמרות שלך מוצגות למטה'
+              : 'הלוח לשבוע זה עדיין לא פורסם — ייתכן שלא יוצגו משמרות'}
           </p>
           {error && (
             <div className="text-sm text-red-600 mt-2 font-medium bg-red-50 p-3 rounded-lg border border-red-200">
@@ -223,8 +226,8 @@ const WorkerFinalSchedule: React.FC<WorkerFinalScheduleProps> = ({ userName, use
                <i className="fas fa-check-circle mr-1"></i> Shared with you
              </span>
            )}
-           <span className="px-3 py-1 bg-white border text-gray-500 rounded-full text-[10px] font-bold">
-             {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+           <span className="px-3 py-1 bg-white border text-gray-500 rounded-full text-[10px] font-bold dir-rtl">
+             {formatWeekLabel(weekMonday)}
            </span>
         </div>
       </div>

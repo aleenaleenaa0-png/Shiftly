@@ -1062,7 +1062,9 @@ namespace Backend.Controllers
                     fullName = employee.FirstName.Trim(),
                     email = employee.Email,
                     role = "Employee",
-                    userType = "Employee"
+                    userType = "Employee",
+                    hourlyWage = employee.HourlyWage,
+                    productivityScore = employee.ProductivityScore
                 });
             }
             catch (Exception ex)

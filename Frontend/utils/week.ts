@@ -21,6 +21,26 @@ export function formatWeekStartParam(monday: Date = getWeekMonday()): string {
   return `${y}-${m}-${d}`;
 }
 
+export function addWeeks(monday: Date, weeks: number): Date {
+  const d = new Date(monday);
+  d.setDate(d.getDate() + weeks * 7);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+export function formatWeekLabel(monday: Date): string {
+  const sunday = addWeeks(monday, 1);
+  sunday.setDate(sunday.getDate() - 1);
+  const opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
+  const start = monday.toLocaleDateString('he-IL', opts);
+  const end = sunday.toLocaleDateString('he-IL', { ...opts, year: 'numeric' });
+  return `${start} – ${end}`;
+}
+
+export function isCurrentWeek(monday: Date): boolean {
+  return formatWeekStartParam(monday) === formatWeekStartParam(getWeekMonday());
+}
+
 export function slotToDayAndType(slotNumber: number): {
   day: string;
   type: 'Morning' | 'Afternoon';

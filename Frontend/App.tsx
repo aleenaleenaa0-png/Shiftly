@@ -38,6 +38,7 @@ import ProductivityWarningModal, {
 } from './components/ProductivityWarningModal';
 import {
   calculateProjectedThroughput,
+  normalizeProductivityScore,
   passesThroughputThreshold,
   STANDARD_SHIFT_HOURS,
 } from './utils/throughput';
@@ -51,6 +52,9 @@ import {
   WEEKLY_SHIFT_SLOT_COUNT,
 } from './utils/week';
 import { buildScheduleReport } from './utils/scheduleReport';
+import WeekNavigator from './components/WeekNavigator';
+import AppToast from './components/AppToast';
+import { notify } from './utils/notify';
 
 type Page = 'schedule' | 'employees' | 'availability' | 'users';
 
@@ -124,6 +128,9 @@ const App: React.FC = () => {
     shiftId: string;
     employeeId: string;
   } | null>(null);
+  const [weekMonday, setWeekMonday] = useState(() => getWeekMonday());
+  const [schedulePublished, setSchedulePublished] = useState(false);
+  const [publishingSchedule, setPublishingSchedule] = useState(false);
 
   const shiftsBySlot = useMemo(() => buildShiftsBySlotMap(shifts), [shifts]);
 
@@ -235,10 +242,6 @@ const App: React.FC = () => {
     const fetchEmployees = async () => {
       try {
         setLoadingEmployees(true);
-        console.log('═══════════════════════════════════════════════════════');
-        console.log('🔄 FETCHING ALL EMPLOYEES FROM ACCESS DATABASE...');
-        console.log('═══════════════════════════════════════════════════════');
-        
         const response = await fetch('/api/employees', {
           credentials: 'include',
           cache: 'no-cache' // Always get fresh data
@@ -246,17 +249,11 @@ const App: React.FC = () => {
 
         if (response.ok) {
           const data = await response.json();
-          console.log(`✓ Received ${data.length} employees from backend`);
-          
-          // Map backend employees to frontend format
           const mappedEmployees: Employee[] = data.map((emp: any) => {
             const employeeId = (emp.EmployeeId || emp.employeeId).toString();
             const firstName = emp.FirstName || emp.firstName || 'Unknown';
             const hourlyWage = emp.HourlyWage || emp.hourlyWage || 25;
-            const productivityScore = emp.ProductivityScore || emp.productivityScore || 70;
-            
-            console.log(`  - Employee ID: ${employeeId}, Name: ${firstName}, Wage: $${hourlyWage}, Productivity: ${productivityScore}%`);
-            
+            const productivityScore = emp.ProductivityScore || emp.productivityScore || 5;
             return {
               id: employeeId,
               name: firstName, // Use FirstName from Access database
@@ -276,8 +273,6 @@ const App: React.FC = () => {
           });
 
           setEmployees(filteredEmployees);
-          console.log(`✓ Successfully loaded ${mappedEmployees.length} employees from Access database`);
-          console.log('═══════════════════════════════════════════════════════');
         } else {
           const errorText = await response.text();
           console.error(`❌ Failed to fetch employees: ${response.status} - ${errorText}`);
@@ -304,9 +299,7 @@ const App: React.FC = () => {
     const fetchShifts = async () => {
       try {
         setLoadingShifts(true);
-        console.log('🔄 Fetching shifts from Access database...');
-        
-        const weekParam = formatWeekStartParam(getWeekMonday());
+        const weekParam = formatWeekStartParam(weekMonday);
         const response = await fetch(`/api/shifts?weekStart=${weekParam}`, {
           credentials: 'include',
           cache: 'no-cache'
@@ -314,14 +307,10 @@ const App: React.FC = () => {
 
         if (response.ok) {
           const data = await response.json();
-          console.log(`✓ Received ${data.length} shifts from backend`);
-          
           const mappedShifts: Shift[] = data.map((shift: Record<string, unknown>) =>
             mapApiShiftToShift(shift)
           );
-
           setShifts(mappedShifts);
-          console.log(`✓ Successfully loaded ${mappedShifts.length} shifts from Access database`);
         } else {
           console.error(`❌ Failed to fetch shifts: ${response.status}`);
           setShifts([]);
@@ -335,14 +324,24 @@ const App: React.FC = () => {
     };
 
     fetchShifts();
-  }, [user]);
+  }, [user, weekMonday]);
 
-  // ─── جلب توفر كل العمال من قاعدة Access (للشريط الجانبي والسحب) ───
+  useEffect(() => {
+    const isManager = user && (user.role === 'Manager' || user.userType === 'Manager');
+    if (!isManager) return;
+    const weekParam = formatWeekStartParam(weekMonday);
+    fetch(`/api/schedule/publish/status?weekStart=${weekParam}`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setSchedulePublished(Boolean(data?.published)))
+      .catch(() => setSchedulePublished(false));
+  }, [user, weekMonday]);
+
+  // ─── جلب توفر كل العمال من قاعدة Access (לلشريط الجانبي والسحب) ───
   const fetchAvailability = useCallback(async () => {
     if (shifts.length === 0 || employees.length === 0) return;
 
     try {
-      const weekParam = formatWeekStartParam(getWeekMonday());
+      const weekParam = formatWeekStartParam(weekMonday);
       const response = await fetch(
         `/api/availabilities/manager-summary?weekStart=${encodeURIComponent(weekParam)}`,
         { credentials: 'include', cache: 'no-store' }
@@ -379,7 +378,7 @@ const App: React.FC = () => {
     } catch (err) {
       console.error('Manager: Error loading availability summary:', err);
     }
-  }, [shifts, employees]);
+  }, [shifts, employees, weekMonday]);
 
   fetchAvailabilityRef.current = fetchAvailability;
 
@@ -445,7 +444,7 @@ const App: React.FC = () => {
   };
 
   const refreshShiftsFromServer = useCallback(async () => {
-    const weekParam = formatWeekStartParam(getWeekMonday());
+    const weekParam = formatWeekStartParam(weekMonday);
     const response = await fetch(`/api/shifts?weekStart=${weekParam}`, {
       credentials: 'include',
       cache: 'no-cache',
@@ -456,7 +455,32 @@ const App: React.FC = () => {
       (shift: Record<string, unknown>) => mapApiShiftToShift(shift)
     );
     setShifts(mappedShifts);
-  }, []);
+  }, [weekMonday]);
+
+  const handlePublishSchedule = async () => {
+    setPublishingSchedule(true);
+    try {
+      const weekParam = formatWeekStartParam(weekMonday);
+      const res = await fetch(`/api/schedule/publish?weekStart=${weekParam}`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        notify(
+          (err as { message?: string }).message || 'פרסום הלוח נכשל',
+          'error'
+        );
+        return;
+      }
+      setSchedulePublished(true);
+      notify('הלוח פורסם לעובדים — הם יראו את המשמרות בפורטל', 'success');
+    } catch {
+      notify('שגיאת רשת בפרסום הלוח', 'error');
+    } finally {
+      setPublishingSchedule(false);
+    }
+  };
 
   const persistAssignmentToApi = async (
     shiftId: string,
@@ -537,11 +561,10 @@ const App: React.FC = () => {
       availableEmployeeIds.length > 0 || Object.values(empSlotMap).some(v => v === true);
 
     if (hasAvailabilityData && !isAvailableForShift) {
-      const name = emp?.name ?? 'This employee';
-      alert(
-        `Only employees who have set availability for this shift can be assigned.\n\n` +
-          `${name} has not marked themselves available for this shift. ` +
-          `They can set their availability in the Worker Portal (Availability / Set Availability), then you can assign them here.`
+      const name = emp?.name ?? 'העובד';
+      notify(
+        `${name} לא סימן/ה זמינות למשמרת זו. העובד/ת יכול/ה לעדכן זמינות בפורטל העובד.`,
+        'error'
       );
       return;
     }
@@ -598,12 +621,27 @@ const App: React.FC = () => {
         return;
       }
 
+      const required = shift.targetSales || 0;
+      const eligibleForThroughput = availableForShift.filter((emp) => {
+        if (required <= 0) return true;
+        const projected = calculateProjectedThroughput(emp.productivityScore, shift);
+        return passesThroughputThreshold(projected, required);
+      });
+
+      if (eligibleForThroughput.length === 0) {
+        emptySlots.push({
+          shift,
+          reason: `${shift.day} ${shift.type} (יעילות מתחת לסף)`,
+        });
+        return;
+      }
+
       // Calculate match score for each employee
       // Score = (productivity * targetSales) / (hourlyRate * shiftCount + 1)
       // Higher productivity + higher target = better match
       // Lower hourly rate = better cost efficiency
       // Lower shift count = better workload balance
-      const scoredEmployees = availableForShift.map(emp => {
+      const scoredEmployees = eligibleForThroughput.map(emp => {
         const productivityMatch = emp.productivityScore * shift.targetSales;
         const costEfficiency = emp.hourlyRate * (employeeShiftCount[emp.id] + 1);
         const matchScore = productivityMatch / costEfficiency;
@@ -645,22 +683,16 @@ const App: React.FC = () => {
 
       if (emptySlots.length > 0) {
         const lines = emptySlots
-          .slice(0, 6)
-          .map(
-            e =>
-              `• ${e.reason}: Plot twist — zero volunteers! Even the coffee machine looks disappointed. ☕😅 (${e.shift.startTime}–${e.shift.endTime})`
-          )
+          .slice(0, 4)
+          .map((e) => `• ${e.reason}`)
           .join('\n');
-        const more =
-          emptySlots.length > 6 ? `\n…and ${emptySlots.length - 6} more.` : '';
-        alert(
-          `Auto Schedule checked the availability guest list…\n\n${lines}${more}\n\nTip: Ask workers to set availability in the Worker Portal, then try again!`
-        );
+        const more = emptySlots.length > 4 ? `\n…ועוד ${emptySlots.length - 4}.` : '';
+        notify(`לא שובצו ${emptySlots.length} משמרות:\n${lines}${more}`, 'info');
       }
 
       if (assignments.length === 0) {
         if (emptySlots.length === 0) {
-          alert('לא נמצאו עובדים זמינים לשיבוץ. אנא ודא שיש עובדים עם זמינות מתאימה.');
+          notify('לא נמצאו עובדים זמינים לשיבוץ. ודא שיש זמינות מתאימה.', 'error');
         }
         return;
       }
@@ -676,13 +708,16 @@ const App: React.FC = () => {
       await refreshShiftsFromServer();
 
       if (failed.length > 0) {
-        alert(
-          `Auto Schedule saved ${saved} assignment(s). ${failed.length} could not be saved (availability rules on server).`
+        notify(
+          `נשמרו ${saved} שיבוצים. ${failed.length} נכשלו (כללי זמינות בשרת).`,
+          'error'
         );
+      } else if (saved > 0) {
+        notify(`שיבוץ אוטומטי: נשמרו ${saved} משמרות`, 'success');
       }
     } catch (error) {
       console.error('Auto schedule error:', error);
-      alert('שגיאה ביצירת סידור עבודה אוטומטי.');
+      notify('שגיאה ביצירת סידור עבודה אוטומטי', 'error');
     } finally {
       setIsAutoFilling(false);
     }
@@ -719,7 +754,7 @@ const App: React.FC = () => {
         totalCost += employee.hourlyRate * shiftHours;
         totalTargetSales += shift.targetSales;
         // Expected sales based on productivity (productivity score as percentage of target)
-        totalExpectedSales += shift.targetSales * (employee.productivityScore / 100);
+        totalExpectedSales += calculateProjectedThroughput(employee.productivityScore, shift);
       }
     });
     
@@ -838,10 +873,17 @@ const App: React.FC = () => {
     setSuggestionLoading(shift.id);
     const result = await getSmartSuggestion(shift, employees);
     if (result && result.includes('|')) {
-      const [empId, reason] = result.split('|').map(s => s.trim());
-      if (employees.find(e => e.id === empId)) {
-        console.log(`AI Suggestion for ${shift.day}: ${reason}`);
-        await executeAssignment(shift.id, empId);
+      const [empId] = result.split('|').map((s) => s.trim());
+      const emp = employees.find((e) => e.id === empId);
+      if (emp) {
+        const required = shift.targetSales || 0;
+        const projected = calculateProjectedThroughput(emp.productivityScore, shift);
+        if (required > 0 && !passesThroughputThreshold(projected, required)) {
+          setProductivityWarning({ employee: emp, shift });
+          setPendingAssignment({ shiftId: shift.id, employeeId: empId });
+        } else {
+          await executeAssignment(shift.id, empId);
+        }
       }
     }
     setSuggestionLoading(null);
@@ -851,7 +893,7 @@ const App: React.FC = () => {
     setShifts(prev => prev.map(s => (s.id === shiftId ? { ...s, assignedEmployeeId: null } : s)));
     const result = await persistAssignmentToApi(shiftId, null);
     if (!result.ok) {
-      alert(result.message || 'Failed to remove assignment.');
+      notify(result.message || 'הסרת השיבוץ נכשלה', 'error');
     }
     await refreshShiftsFromServer();
   };
@@ -1039,10 +1081,21 @@ const App: React.FC = () => {
                 <button 
                     onClick={runScheduleReport}
                     className="flex items-center space-x-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg transform hover:scale-105 active:scale-95"
-                    title="Weekly Schedule Report"
+                    title="דוח שבועי"
                 >
                     <i className="fas fa-chart-line"></i>
-                    <span className="hidden sm:inline ml-2">Report</span>
+                    <span className="hidden sm:inline ml-2">דוח</span>
+                </button>
+                <button
+                    onClick={handlePublishSchedule}
+                    disabled={publishingSchedule || schedulePublished}
+                    className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg transform hover:scale-105 active:scale-95"
+                    title="פרסום הלוח לעובדים"
+                >
+                  <i className={`fas ${publishingSchedule ? 'fa-spinner fa-spin' : 'fa-share-nodes'}`} />
+                  <span className="hidden sm:inline ml-2">
+                    {schedulePublished ? 'פורסם' : 'פרסום לעובדים'}
+                  </span>
                 </button>
               </div>
             )}
@@ -1078,6 +1131,15 @@ const App: React.FC = () => {
       ) : (
         <main className="relative z-10 max-w-7xl mx-auto w-full px-4 lg:px-8 py-10 flex flex-col lg:flex-row gap-8">
         <div className="flex-1 min-w-0">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+            <WeekNavigator weekMonday={weekMonday} onChange={setWeekMonday} />
+            {schedulePublished && (
+              <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-full dir-rtl">
+                <i className="fas fa-check-circle ml-1" />
+                הלוח פורסם לעובדים
+              </span>
+            )}
+          </div>
           <KPIBanner kpis={kpis} />
 
           {reportOpen && (
@@ -1220,6 +1282,7 @@ const App: React.FC = () => {
         onCancel={handleProductivityWarningCancel}
         onProceed={handleProductivityWarningProceed}
       />
+      <AppToast />
     </div>
   );
 };
@@ -1251,8 +1314,9 @@ const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, assignedEmployee, onDrop, 
     };
 
     if (assignedEmployee) {
-        const scoreColor = assignedEmployee.productivityScore > 85 ? 'text-green-600 bg-green-50' : 
-                          assignedEmployee.productivityScore > 70 ? 'text-orange-600 bg-orange-50' : 'text-red-600 bg-red-50';
+        const normScore = normalizeProductivityScore(assignedEmployee.productivityScore);
+        const scoreColor = normScore >= 8.5 ? 'text-green-600 bg-green-50' : 
+                          normScore >= 7 ? 'text-orange-600 bg-orange-50' : 'text-red-600 bg-red-50';
 
         return (
             <div className="relative group bg-white/90 backdrop-blur-sm border border-rose-200 rounded-2xl p-4 flex items-center shadow-lg hover:shadow-xl transition-all animate-in fade-in zoom-in duration-200 hover:scale-105">
@@ -1262,7 +1326,7 @@ const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, assignedEmployee, onDrop, 
                     <p className="text-xs text-slate-600 font-medium">${shift.targetSales.toLocaleString()} Target</p>
                 </div>
                 <div className={`ml-3 px-3 py-1 rounded-full text-xs font-black ${scoreColor}`}>
-                    {assignedEmployee.productivityScore}%
+                    {normScore.toFixed(1)}/10
                 </div>
                 <button 
                     onClick={onRemove}
@@ -1325,7 +1389,7 @@ const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, assignedEmployee, onDrop, 
                                     <span
                                         key={emp.id}
                                         className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-100 text-green-800 text-[9px] font-semibold border border-green-300"
-                                        title={`${emp.name} — ${emp.productivityScore}%`}
+                                        title={`${emp.name} — ${normalizeProductivityScore(emp.productivityScore).toFixed(1)}/10`}
                                     >
                                         {emp.name.split(' ')[0]}
                                     </span>
