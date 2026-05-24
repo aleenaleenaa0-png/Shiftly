@@ -19,7 +19,7 @@
  * =============================================================================
  */
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, startTransition } from 'react';
 import { Shift, Employee, ScheduleKPIs } from './types';
 import { DAYS } from './constants';
 import KPIBanner from './components/KPIBanner';
@@ -56,6 +56,7 @@ import { formatUserRoleHe, formatShiftTypeHe } from './utils/labelsHe';
 import { buildScheduleReport } from './utils/scheduleReport';
 import WeekNavigator from './components/WeekNavigator';
 import AppToast from './components/AppToast';
+import BackgroundParticles from './components/BackgroundParticles';
 import { notify } from './utils/notify';
 import {
   MAX_SHIFTS_PER_EMPLOYEE_WEEK,
@@ -475,6 +476,9 @@ const App: React.FC = () => {
 
   const handlePublishSchedule = async () => {
     setPublishingSchedule(true);
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
     try {
       const weekParam = formatWeekStartParam(weekMonday);
       const res = await fetch(`/api/schedule/publish?weekStart=${weekParam}`, {
@@ -556,7 +560,6 @@ const App: React.FC = () => {
       return;
     }
 
-    await refreshShiftsFromServer();
   };
 
   const handleProductivityWarningCancel = () => {
@@ -635,6 +638,10 @@ const App: React.FC = () => {
 
   const handleAutoFill = async () => {
     setIsAutoFilling(true);
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+
     try {
       const { assignments, emptySlots } = runFastAutoSchedule(
         shifts,
@@ -658,34 +665,47 @@ const App: React.FC = () => {
         return;
       }
 
-      let saved = 0;
-      const failed: string[] = [];
-      for (const { shiftId, employeeId } of assignments) {
-        const result = await persistAssignmentToApi(shiftId, employeeId);
-        if (result.ok) saved++;
-        else failed.push(shiftId);
-      }
+      const byShift = new Map(assignments.map((a) => [a.shiftId, a.employeeId]));
+      setShifts((prev) =>
+        prev.map((s) =>
+          byShift.has(s.id) ? { ...s, assignedEmployeeId: byShift.get(s.id)! } : s
+        )
+      );
 
-      await refreshShiftsFromServer();
+      const results = await Promise.all(
+        assignments.map(async ({ shiftId, employeeId }) => {
+          const result = await persistAssignmentToApi(shiftId, employeeId);
+          return { shiftId, employeeId, ...result };
+        })
+      );
 
+      const failed = results.filter((r) => !r.ok);
       if (failed.length > 0) {
+        const failedIds = new Set(failed.map((f) => f.shiftId));
+        setShifts((prev) =>
+          prev.map((s) =>
+            failedIds.has(s.id) ? { ...s, assignedEmployeeId: null } : s
+          )
+        );
+        void refreshShiftsFromServer();
         notify(
-          `נשמרו ${saved} שיבוצים. ${failed.length} נכשלו (כללי זמינות בשרת).`,
+          `נשמרו ${results.length - failed.length} שיבוצים. ${failed.length} נכשלו.`,
           'error'
         );
-      } else if (saved > 0) {
-        notify(`שיבוץ אוטומטי: נשמרו ${saved} משמרות`, 'success');
+      } else {
+        notify(`שיבוץ אוטומטי: נשמרו ${results.length} משמרות`, 'success');
       }
     } catch (error) {
       console.error('Auto schedule error:', error);
       notify('שגיאה ביצירת סידור עבודה אוטומטי', 'error');
+      void refreshShiftsFromServer();
     } finally {
       setIsAutoFilling(false);
     }
   };
 
   const runScheduleReport = () => {
-    setReportOpen(true);
+    startTransition(() => setReportOpen(true));
   };
 
   const runAiAnalysis = async () => {
@@ -851,12 +871,19 @@ const App: React.FC = () => {
   };
 
   const removeAssignment = async (shiftId: string) => {
-    setShifts(prev => prev.map(s => (s.id === shiftId ? { ...s, assignedEmployeeId: null } : s)));
+    const previous = shifts.find((s) => s.id === shiftId)?.assignedEmployeeId ?? null;
+    setShifts((prev) =>
+      prev.map((s) => (s.id === shiftId ? { ...s, assignedEmployeeId: null } : s))
+    );
     const result = await persistAssignmentToApi(shiftId, null);
     if (!result.ok) {
+      setShifts((prev) =>
+        prev.map((s) =>
+          s.id === shiftId ? { ...s, assignedEmployeeId: previous } : s
+        )
+      );
       notify(result.message || 'הסרת השיבוץ נכשלה', 'error');
     }
-    await refreshShiftsFromServer();
   };
 
   // Show login page if not authenticated
@@ -890,46 +917,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col relative">
-      {/* Live animated background particles */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-        {[...Array(30)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute rounded-full animate-pulse"
-            style={{
-              width: `${Math.random() * 8 + 4}px`,
-              height: `${Math.random() * 8 + 4}px`,
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              backgroundColor: i % 3 === 0 ? 'rgba(251, 113, 133, 0.4)' : i % 3 === 1 ? 'rgba(168, 85, 247, 0.4)' : 'rgba(34, 211, 238, 0.4)',
-              animation: `floatParticle ${10 + Math.random() * 15}s ease-in-out infinite`,
-              animationDelay: `${Math.random() * 5}s`,
-              filter: 'blur(1px)'
-            }}
-          />
-        ))}
-      </div>
-      
-      <style>{`
-        @keyframes floatParticle {
-          0%, 100% {
-            transform: translate(0, 0) scale(1);
-            opacity: 0.3;
-          }
-          25% {
-            transform: translate(${Math.random() * 100 - 50}px, ${Math.random() * 100 - 50}px) scale(1.5);
-            opacity: 0.6;
-          }
-          50% {
-            transform: translate(${Math.random() * 100 - 50}px, ${Math.random() * 100 - 50}px) scale(0.8);
-            opacity: 0.4;
-          }
-          75% {
-            transform: translate(${Math.random() * 100 - 50}px, ${Math.random() * 100 - 50}px) scale(1.2);
-            opacity: 0.5;
-          }
-        }
-      `}</style>
+      <BackgroundParticles />
       
       {(user.role === 'Manager' || user.userType === 'Manager') && (
       <nav className="bg-white/95 backdrop-blur-xl border-b border-rose-200/60 shadow-sm px-4 sm:px-6 py-3 sticky top-0 z-50 dir-rtl">
@@ -1032,7 +1020,7 @@ const App: React.FC = () => {
                 <button 
                     onClick={handleAutoFill}
                     disabled={isAutoFilling}
-                    className="flex items-center gap-2 bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 hover:from-rose-400 hover:via-purple-400 hover:to-cyan-400 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md shadow-rose-500/25 hover:shadow-lg disabled:opacity-50 relative overflow-hidden group"
+                    className="flex items-center gap-2 bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 hover:from-rose-400 hover:via-purple-400 hover:to-cyan-400 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-[transform,opacity,box-shadow] duration-150 shadow-md shadow-rose-500/25 hover:shadow-lg disabled:opacity-50 relative overflow-hidden group active:scale-[0.98]"
                     title="שיבוץ אוטומטי"
                 >
                   <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></span>
@@ -1046,7 +1034,7 @@ const App: React.FC = () => {
                 <button 
                     type="button"
                     onClick={runScheduleReport}
-                    className="flex items-center gap-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md shadow-violet-500/30 hover:shadow-lg hover:shadow-violet-500/40 active:scale-[0.98]"
+                    className="flex items-center gap-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-[transform,opacity,box-shadow] duration-150 shadow-md shadow-violet-500/30 hover:shadow-lg hover:shadow-violet-500/40 active:scale-[0.98]"
                     title="דוח שבועי"
                 >
                     <span className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
@@ -1058,7 +1046,7 @@ const App: React.FC = () => {
                     type="button"
                     onClick={handlePublishSchedule}
                     disabled={publishingSchedule || schedulePublished}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md active:scale-[0.98] disabled:cursor-not-allowed ${
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-[transform,opacity,box-shadow] duration-150 shadow-md active:scale-[0.98] disabled:cursor-not-allowed ${
                       schedulePublished
                         ? 'bg-emerald-50 text-emerald-800 border-2 border-emerald-300 shadow-emerald-500/10'
                         : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-500/30 hover:shadow-lg hover:shadow-emerald-500/40 disabled:opacity-60'
@@ -1106,7 +1094,7 @@ const App: React.FC = () => {
           <button
             type="button"
             onClick={handleLogout}
-            className="shrink-0 flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg active:scale-95"
+            className="shrink-0 flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-semibold transition-[transform,opacity,box-shadow] duration-150 shadow-md hover:shadow-lg active:scale-95"
             title="יציאה"
           >
             <i className="fas fa-sign-out-alt" aria-hidden />
