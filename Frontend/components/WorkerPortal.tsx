@@ -26,8 +26,7 @@ const WorkerPortal: React.FC<WorkerPortalProps> = ({ user, onLogout }) => {
   const [stats, setStats] = useState({
     paydayEst: '$0',
     scheduledHours: '0h',
-    shiftAccuracy: '0%',
-    openShifts: '0'
+    openShifts: '0',
   });
 
   useEffect(() => {
@@ -62,7 +61,6 @@ const WorkerPortal: React.FC<WorkerPortalProps> = ({ user, onLogout }) => {
           setStats({
             paydayEst: `$${estimatedPay.toLocaleString()}`,
             scheduledHours: `${totalHours.toFixed(1)}h`,
-            shiftAccuracy: '98%',
             openShifts: '0',
           });
         }
@@ -94,7 +92,7 @@ const WorkerPortal: React.FC<WorkerPortalProps> = ({ user, onLogout }) => {
       
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
         {/* Stats Row */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <WorkerStatCard 
             label="Next Payday Est." 
             value={stats.paydayEst} 
@@ -108,13 +106,6 @@ const WorkerPortal: React.FC<WorkerPortalProps> = ({ user, onLogout }) => {
             subValue="This week" 
             icon="⏱️" 
             color="purple" 
-          />
-          <WorkerStatCard 
-            label="Shift Accuracy" 
-            value={stats.shiftAccuracy} 
-            subValue="Perfect attendance" 
-            icon="📈" 
-            color="cyan" 
           />
           <WorkerStatCard 
             label="Open Shifts" 
