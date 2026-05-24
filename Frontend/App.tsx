@@ -974,9 +974,9 @@ const App: React.FC = () => {
       
       {(user.role === 'Manager' || user.userType === 'Manager') && (
       <nav className="bg-white/95 backdrop-blur-xl border-b border-rose-200/60 shadow-sm px-4 sm:px-6 py-3 sticky top-0 z-50 dir-rtl">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto flex items-center gap-3 w-full">
           {/* Logo and Brand */}
-          <div className="flex items-center space-x-3 min-w-0">
+          <div className="flex items-center space-x-3 min-w-0 shrink-0">
             <Logo size="small" showText={false} />
             <div className="flex flex-col">
               <div className="flex items-center space-x-2">
@@ -1000,7 +1000,8 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Navigation Menu */}
+          {/* Navigation + tools (center) */}
+          <div className="flex flex-1 flex-wrap items-center justify-center gap-2 min-w-0">
           <div className="flex items-center space-x-2 flex-wrap">
             {/* Only show Schedule for managers */}
             {(user.role === 'Manager' || user.userType === 'Manager') && (
@@ -1132,22 +1133,26 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {/* User Info and Logout */}
-            <div className="flex items-center space-x-3 pl-3 border-l border-rose-200">
+            {/* User Info */}
+            <div className="flex items-center gap-2 pe-3 border-e border-rose-200">
               <div className="text-right hidden sm:block">
                 <p className="text-xs font-bold text-slate-700">{user.fullName}</p>
                 <p className="text-[10px] text-slate-500">{formatUserRoleHe(user.role || user.userType)}</p>
               </div>
-              <button
-                onClick={handleLogout}
-                className="flex items-center space-x-2 bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg transform hover:scale-105 active:scale-95"
-                title="יציאה"
-              >
-                <i className="fas fa-sign-out-alt"></i>
-                <span className="hidden sm:inline">יציאה</span>
-              </button>
             </div>
           </div>
+          </div>
+
+          {/* יציאה — בקצה העמוד */}
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="shrink-0 flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg active:scale-95"
+            title="יציאה"
+          >
+            <i className="fas fa-sign-out-alt" aria-hidden />
+            <span className="hidden sm:inline">יציאה</span>
+          </button>
         </div>
       </nav>
       )}

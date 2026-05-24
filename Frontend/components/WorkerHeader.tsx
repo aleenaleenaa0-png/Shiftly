@@ -14,12 +14,12 @@ const WorkerHeader: React.FC<WorkerHeaderProps> = ({
   onLogout,
 }) => {
   return (
-    <header className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-md">
+    <header className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-md dir-rtl">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
         <div className="flex flex-col gap-3">
-          {/* שורה עליונה: לוגו + משתמש */}
-          <div className="flex items-center justify-between gap-3 min-h-[3rem]">
-            <div className="flex items-center gap-3 min-w-0">
+          {/* שורה עליונה: לוגו | משתמש | יציאה בקצה */}
+          <div className="flex items-center gap-3 min-h-[3rem] w-full">
+            <div className="flex items-center gap-3 min-w-0 shrink-0">
               <div className="w-10 h-10 shrink-0 bg-gradient-to-br from-rose-100 to-purple-100 rounded-xl flex items-center justify-center">
                 <i className="fas fa-calendar-days text-rose-500 text-lg" aria-hidden />
               </div>
@@ -33,21 +33,20 @@ const WorkerHeader: React.FC<WorkerHeaderProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-              <div className="text-right hidden sm:block max-w-[10rem]">
-                <p className="text-xs font-bold text-slate-800 truncate">{userName}</p>
-                <p className="text-[10px] text-slate-500">עובד/ת</p>
-              </div>
-              <button
-                type="button"
-                onClick={onLogout}
-                className="flex items-center gap-1.5 px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-xs sm:text-sm font-semibold shadow-sm transition-colors"
-                title="התנתקות"
-              >
-                <i className="fas fa-sign-out-alt" />
-                <span className="hidden sm:inline">יציאה</span>
-              </button>
+            <div className="flex-1 flex justify-center min-w-0" aria-hidden />
+            <div className="text-right hidden sm:block max-w-[10rem] shrink-0 pe-3 border-e border-slate-200">
+              <p className="text-xs font-bold text-slate-800 truncate">{userName}</p>
+              <p className="text-[10px] text-slate-500">עובד/ת</p>
             </div>
+            <button
+              type="button"
+              onClick={onLogout}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-xs sm:text-sm font-semibold shadow-sm transition-colors"
+              title="התנתקות"
+            >
+              <i className="fas fa-sign-out-alt" aria-hidden />
+              <span className="hidden sm:inline">יציאה</span>
+            </button>
           </div>
 
           {/* שורת טאבים — ברוחב מלא במובייל */}
