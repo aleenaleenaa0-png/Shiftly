@@ -970,7 +970,8 @@ const App: React.FC = () => {
         }
       `}</style>
       
-      <nav className="relative bg-white/90 backdrop-blur-xl border-b border-rose-200/60 shadow-lg shadow-rose-500/5 px-6 py-3 sticky top-0 z-50">
+      {(user.role === 'Manager' || user.userType === 'Manager') && (
+      <nav className="bg-white/95 backdrop-blur-xl border-b border-rose-200/60 shadow-sm px-4 sm:px-6 py-3 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
           {/* Logo and Brand */}
           <div className="flex items-center space-x-3 min-w-0">
@@ -1118,6 +1119,7 @@ const App: React.FC = () => {
           </div>
         </div>
       </nav>
+      )}
 
       {(user.role === 'Employee' || user.userType === 'Employee') ? (
         // Employees see the Worker Portal

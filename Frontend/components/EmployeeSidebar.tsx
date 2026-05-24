@@ -124,7 +124,7 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
 
   return (
     <div className="w-full lg:w-[26rem] flex-shrink-0">
-      <div className="bg-white/80 backdrop-blur-2xl rounded-3xl shadow-xl shadow-rose-500/10 border border-rose-200/50 p-5 sticky top-20 flex flex-col h-[calc(100vh-5.5rem)] max-h-[calc(100vh-5.5rem)]">
+      <div className="bg-white/80 backdrop-blur-2xl rounded-3xl shadow-xl shadow-rose-500/10 border border-rose-200/50 p-5 lg:sticky lg:top-24 flex flex-col lg:max-h-[calc(100vh-7rem)]">
         <h3 className="text-lg font-black text-slate-800 mb-2 flex items-center justify-between tracking-tight flex-shrink-0">
           <span className="flex items-center">
             <i className="fas fa-users-rectangle mr-3 text-rose-500"></i>

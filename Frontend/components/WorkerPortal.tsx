@@ -91,13 +91,7 @@ const WorkerPortal: React.FC<WorkerPortalProps> = ({ user, onLogout }) => {
   }, [user.userId, weekMonday, hourlyWage]);
 
   return (
-    <div
-      className="min-h-screen pb-12"
-      style={{
-        background: 'linear-gradient(135deg, #fef2f2 0%, #f5f3ff 50%, #ecfeff 100%)',
-        fontFamily: "'Inter', sans-serif",
-      }}
-    >
+    <div className="min-h-screen pb-12 relative z-10">
       <WorkerHeader
         userName={user.fullName}
         activeTab={activeTab}
