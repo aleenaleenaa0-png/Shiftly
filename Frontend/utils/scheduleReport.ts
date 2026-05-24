@@ -193,22 +193,22 @@ function buildExecutiveSummary(
 ): string[] {
   const bullets: string[] = [];
   bullets.push(
-    `${coverage.filled} of ${coverage.total} shifts have a worker assigned (${coverage.percentage}% full).`
+    `${coverage.filled} מתוך ${coverage.total} משמרות עם עובד משובץ (${coverage.percentage}% כיסוי).`
   );
   if (openShiftCount > 0) {
-    bullets.push(`${openShiftCount} shift(s) still need someone assigned.`);
+    bullets.push(`עדיין חסרים ${openShiftCount} משמרות ללא שיבוץ.`);
   } else {
-    bullets.push('Every shift slot has someone assigned.');
+    bullets.push('כל המשבצות השבועיות משובצות.');
   }
   bullets.push(
-    `Week sales target is ${formatCurrency(totalTargetSales)}; expected from current staff is ${formatCurrency(totalProjectedSales)}.`
+    `יעד מכירות שבועי: ${formatCurrency(totalTargetSales)}; צפי מהצוות: ${formatCurrency(totalProjectedSales)}.`
   );
-  bullets.push(`Estimated payroll for assigned shifts: ${formatCurrency(totalLaborCost)}.`);
+  bullets.push(`הערכת שכר למשמרות משובצות: ${formatCurrency(totalLaborCost)}.`);
   if (atRiskCount > 0) {
-    bullets.push(`${atRiskCount} assignment(s) may not meet the sales target (90% rule).`);
+    bullets.push(`${atRiskCount} שיבוץ/ים עלולים לא לעמוד ביעד (כלל 90%).`);
   }
   if (noAvailabilityCount > 0) {
-    bullets.push(`${noAvailabilityCount} open slot(s) have zero workers marked available.`);
+    bullets.push(`${noAvailabilityCount} משבצות ללא אף עובד שסימן זמינות.`);
   }
   return bullets;
 }
@@ -321,25 +321,25 @@ export function buildScheduleReport(
   if (openShiftCount > 0) {
     actions.push({
       priority: 'do-first',
-      message: `Assign workers to ${openShiftCount} open shift(s).`,
+      message: `שבץ עובדים ל-${openShiftCount} משמרות פתוחות.`,
     });
   }
   if (noAvailabilityCount > 0) {
     actions.push({
       priority: 'do-first',
-      message: `Ask staff to set availability for ${noAvailabilityCount} slot(s) with no volunteers.`,
+      message: `בקשי מהעובדים לעדכן זמינות ב-${noAvailabilityCount} משבצות ללא מתנדבים.`,
     });
   }
   if (atRiskCount > 0) {
     actions.push({
       priority: 'consider',
-      message: `Review ${atRiskCount} at-risk assignment(s) that may miss sales targets.`,
+      message: `בדקי ${atRiskCount} שיבוצים בסיכון שלא יעמדו ביעד המכירות.`,
     });
   }
   if (actions.length === 0) {
     actions.push({
       priority: 'all-set',
-      message: 'Schedule looks balanced — no urgent actions.',
+      message: 'הלוח נראה מאוזן — אין פעולות דחופות.',
     });
   }
 
@@ -354,7 +354,7 @@ export function buildScheduleReport(
   );
 
   return {
-    generatedAt: new Date().toLocaleString(),
+    generatedAt: new Date().toLocaleString('he-IL'),
     healthStatus,
     executiveSummary,
     coverage,

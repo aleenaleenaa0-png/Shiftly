@@ -1,5 +1,6 @@
 import { DAYS } from '../constants';
 import { Shift } from '../types';
+export { formatDayHe, formatShiftTypeHe, formatRoleHe, formatUserRoleHe } from './labelsHe';
 
 export const WEEKLY_SHIFT_SLOT_COUNT = 14;
 

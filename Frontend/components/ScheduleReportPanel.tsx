@@ -1,5 +1,6 @@
 import React, { memo } from 'react';
 import { ScheduleReport } from '../utils/scheduleReport';
+import { formatDayHe, formatShiftTypeHe } from '../utils/labelsHe';
 
 interface ScheduleReportPanelProps {
   report: ScheduleReport;
@@ -7,9 +8,9 @@ interface ScheduleReportPanelProps {
 }
 
 const healthLabels: Record<ScheduleReport['healthStatus'], { label: string; className: string }> = {
-  good: { label: 'Looking good', className: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
-  attention: { label: 'Needs attention', className: 'bg-amber-100 text-amber-800 border-amber-200' },
-  critical: { label: 'Action required', className: 'bg-red-100 text-red-800 border-red-200' },
+  good: { label: 'נראה טוב', className: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+  attention: { label: 'דורש תשומת לב', className: 'bg-amber-100 text-amber-800 border-amber-200' },
+  critical: { label: 'נדרשת פעולה', className: 'bg-red-100 text-red-800 border-red-200' },
 };
 
 const statusStyles: Record<string, string> = {
@@ -20,21 +21,21 @@ const statusStyles: Record<string, string> = {
 };
 
 const statusLabels: Record<string, string> = {
-  'filled-ok': 'Good',
-  'filled-risk': 'At risk',
-  empty: 'Empty',
-  'no-workers': 'No staff available',
+  'filled-ok': 'ביעד',
+  'filled-risk': 'בסיכון',
+  empty: 'ריק',
+  'no-workers': 'אין זמינות',
 };
 
 const ScheduleReportPanel: React.FC<ScheduleReportPanelProps> = ({ report, onClose }) => {
   const health = healthLabels[report.healthStatus];
 
   return (
-    <div className="mb-8 bg-white/95 backdrop-blur-xl border border-purple-200/60 rounded-2xl shadow-2xl overflow-hidden print:shadow-none">
+    <div className="mb-8 bg-white/95 backdrop-blur-xl border border-purple-200/60 rounded-2xl shadow-2xl overflow-hidden print:shadow-none dir-rtl">
       <div className="bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 px-6 py-4 flex items-center justify-between print:bg-slate-700">
         <div>
-          <h3 className="text-white font-bold text-lg">Weekly Schedule Report</h3>
-          <p className="text-white/80 text-xs mt-0.5">Generated {report.generatedAt}</p>
+          <h3 className="text-white font-bold text-lg">דוח שבועי — Shiftly</h3>
+          <p className="text-white/80 text-xs mt-0.5">נוצר: {report.generatedAt}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -42,31 +43,31 @@ const ScheduleReportPanel: React.FC<ScheduleReportPanelProps> = ({ report, onClo
             onClick={() => window.print()}
             className="text-white/90 hover:text-white text-sm px-3 py-1.5 rounded-lg bg-white/20 print:hidden"
           >
-            Print
+            הדפסה
           </button>
           <button
             type="button"
             onClick={onClose}
             className="text-white/90 hover:text-white p-2 rounded-lg print:hidden"
-            aria-label="Close report"
+            aria-label="סגירת דוח"
           >
             <i className="fas fa-times" />
           </button>
         </div>
       </div>
 
-      <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto print:max-h-none">
+      <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto print:max-h-none text-right">
         <div className="flex flex-wrap items-center gap-3">
           <span className={`px-3 py-1 rounded-full text-sm font-bold border ${health.className}`}>
             {health.label}
           </span>
           <span className="text-sm text-slate-600">
-            {report.coverage.filled} / {report.coverage.total} shifts filled ({report.coverage.percentage}%)
+            {report.coverage.filled} / {report.coverage.total} משמרות משובצות ({report.coverage.percentage}%)
           </span>
         </div>
 
         <section>
-          <h4 className="text-sm font-bold text-slate-800 mb-2">In short</h4>
+          <h4 className="text-sm font-bold text-slate-800 mb-2">בקצרה</h4>
           <ul className="list-disc list-inside text-sm text-slate-700 space-y-1">
             {report.executiveSummary.map((line, i) => (
               <li key={i}>{line}</li>
@@ -76,35 +77,35 @@ const ScheduleReportPanel: React.FC<ScheduleReportPanelProps> = ({ report, onClo
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="p-4 rounded-xl bg-rose-50 border border-rose-100">
-            <p className="text-xs font-semibold text-slate-600">Payroll estimate</p>
+            <p className="text-xs font-semibold text-slate-600">הערכת שכר</p>
             <p className="text-2xl font-black text-slate-800">
               ${Math.round(report.totalLaborCost).toLocaleString()}
             </p>
-            <p className="text-xs text-slate-500 mt-1">Assigned shifts only</p>
+            <p className="text-xs text-slate-500 mt-1">משמרות משובצות בלבד</p>
           </div>
           <div className="p-4 rounded-xl bg-green-50 border border-green-100">
-            <p className="text-xs font-semibold text-slate-600">Week sales target</p>
+            <p className="text-xs font-semibold text-slate-600">יעד מכירות שבועי</p>
             <p className="text-2xl font-black text-slate-800">
               ${Math.round(report.totalTargetSales).toLocaleString()}
             </p>
             <p className="text-xs text-slate-500 mt-1">
-              Expected: ${Math.round(report.totalProjectedSales).toLocaleString()}
+              צפי: ${Math.round(report.totalProjectedSales).toLocaleString()}
             </p>
           </div>
           <div className="p-4 rounded-xl bg-purple-50 border border-purple-100">
-            <p className="text-xs font-semibold text-slate-600">At-risk assignments</p>
+            <p className="text-xs font-semibold text-slate-600">שיבוצים בסיכון</p>
             <p className="text-2xl font-black text-slate-800">{report.atRiskCount}</p>
-            <p className="text-xs text-slate-500 mt-1">Below 90% of target</p>
+            <p className="text-xs text-slate-500 mt-1">מתחת ל-90% מהיעד</p>
           </div>
           <div className="p-4 rounded-xl bg-cyan-50 border border-cyan-100">
-            <p className="text-xs font-semibold text-slate-600">Open shifts</p>
+            <p className="text-xs font-semibold text-slate-600">משמרות פתוחות</p>
             <p className="text-2xl font-black text-slate-800">{report.openShiftCount}</p>
-            <p className="text-xs text-slate-500 mt-1">Still need a worker</p>
+            <p className="text-xs text-slate-500 mt-1">טרם שובצו</p>
           </div>
         </div>
 
         <section>
-          <h4 className="text-sm font-bold text-slate-800 mb-2">How full is the schedule?</h4>
+          <h4 className="text-sm font-bold text-slate-800 mb-2">מידת מילוי הלוח</h4>
           <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-rose-400 via-purple-400 to-cyan-400 transition-all"
@@ -112,42 +113,42 @@ const ScheduleReportPanel: React.FC<ScheduleReportPanelProps> = ({ report, onClo
             />
           </div>
           <p className="text-xs text-slate-600 mt-1">
-            {report.coverage.percentage}% — {report.coverage.filled} of {report.coverage.total} weekly slots
+            {report.coverage.percentage}% — {report.coverage.filled} מתוך {report.coverage.total} משבצות
             {report.openShiftCount > 0
-              ? ` · ${report.openShiftCount} still open`
-              : ' · every slot has someone'}
+              ? ` · ${report.openShiftCount} עדיין פתוחות`
+              : ' · הכל משובץ'}
           </p>
         </section>
 
         <section>
-          <h4 className="text-sm font-bold text-slate-800 mb-3">Week at a glance</h4>
+          <h4 className="text-sm font-bold text-slate-800 mb-3">מבט על השבוע</h4>
           <div className="overflow-x-auto">
             <table className="w-full text-sm border-collapse min-w-[600px]">
               <thead>
-                <tr className="bg-slate-50 text-left">
-                  <th className="p-2 font-bold text-slate-600">Day</th>
-                  <th className="p-2 font-bold text-slate-600">Morning</th>
-                  <th className="p-2 font-bold text-slate-600">Afternoon</th>
+                <tr className="bg-slate-50">
+                  <th className="p-2 font-bold text-slate-600 text-right">יום</th>
+                  <th className="p-2 font-bold text-slate-600 text-right">בוקר</th>
+                  <th className="p-2 font-bold text-slate-600 text-right">ערב</th>
                 </tr>
               </thead>
               <tbody>
                 {report.days.map(row => (
                   <tr key={row.day} className="border-t border-slate-100">
-                    <td className="p-2 font-semibold text-slate-800">{row.day}</td>
+                    <td className="p-2 font-semibold text-slate-800">{formatDayHe(row.day)}</td>
                     {[row.morning, row.afternoon].map(cell => (
                       <td key={cell.slotNumber} className="p-2">
-                        <div className={`rounded-lg border p-2 text-xs ${statusStyles[cell.status]}`}>
+                        <div className={`rounded-lg border p-2 text-xs text-right ${statusStyles[cell.status]}`}>
                           <div className="font-bold">{statusLabels[cell.status]}</div>
                           {cell.employeeName && <p>{cell.employeeName}</p>}
                           <p className="opacity-80">
-                            Target ${cell.targetSales.toLocaleString()}
+                            יעד ${cell.targetSales.toLocaleString()}
                             {cell.projectedSales != null &&
-                              ` · Est. $${Math.round(cell.projectedSales).toLocaleString()}`}
+                              ` · צפי $${Math.round(cell.projectedSales).toLocaleString()}`}
                           </p>
                           {cell.availableCount > 0 &&
                             cell.status !== 'filled-ok' &&
                             cell.status !== 'filled-risk' && (
-                              <p className="mt-1">{cell.availableCount} available</p>
+                              <p className="mt-1">{cell.availableCount} זמינים</p>
                             )}
                         </div>
                       </td>
@@ -161,12 +162,12 @@ const ScheduleReportPanel: React.FC<ScheduleReportPanelProps> = ({ report, onClo
 
         {report.atRisk.length > 0 && (
           <section>
-            <h4 className="text-sm font-bold text-slate-800 mb-2">At-risk assignments</h4>
+            <h4 className="text-sm font-bold text-slate-800 mb-2">שיבוצים בסיכון</h4>
             <ul className="text-sm text-slate-700 space-y-1">
               {report.atRisk.map((item, i) => (
                 <li key={i}>
-                  <strong>{item.employeeName}</strong> — {item.day} {item.type}: ~$
-                  {item.shortfall.toLocaleString()} below minimum
+                  <strong>{item.employeeName}</strong> — {formatDayHe(item.day)} {formatShiftTypeHe(item.type)}:
+                  פער ~${item.shortfall.toLocaleString()} מהמינימום
                 </li>
               ))}
             </ul>
@@ -174,7 +175,7 @@ const ScheduleReportPanel: React.FC<ScheduleReportPanelProps> = ({ report, onClo
         )}
 
         <section>
-          <h4 className="text-sm font-bold text-slate-800 mb-2">What to do next</h4>
+          <h4 className="text-sm font-bold text-slate-800 mb-2">מה לעשות הלאה</h4>
           <ul className="space-y-2">
             {report.actions.map((action, i) => (
               <li
@@ -187,9 +188,9 @@ const ScheduleReportPanel: React.FC<ScheduleReportPanelProps> = ({ report, onClo
                       : 'bg-emerald-50 border-emerald-100 text-emerald-900'
                 }`}
               >
-                {action.priority === 'do-first' && 'Do first: '}
-                {action.priority === 'consider' && 'Consider: '}
-                {action.priority === 'all-set' && 'All set: '}
+                {action.priority === 'do-first' && 'דחוף: '}
+                {action.priority === 'consider' && 'לשקול: '}
+                {action.priority === 'all-set' && 'הכל בסדר: '}
                 {action.message}
               </li>
             ))}
@@ -198,25 +199,25 @@ const ScheduleReportPanel: React.FC<ScheduleReportPanelProps> = ({ report, onClo
 
         {report.employees.length > 0 && (
           <section>
-            <h4 className="text-sm font-bold text-slate-800 mb-2">Hours per employee</h4>
+            <h4 className="text-sm font-bold text-slate-800 mb-2">שעות לפי עובד</h4>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-slate-600 border-b">
-                    <th className="py-2 pr-4">Name</th>
-                    <th className="py-2 pr-4">Shifts</th>
-                    <th className="py-2 pr-4">Hours</th>
-                    <th className="py-2 pr-4">Pay cost</th>
-                    <th className="py-2">Expected sales</th>
+                  <tr className="text-slate-600 border-b">
+                    <th className="py-2 pl-4 text-right">שם</th>
+                    <th className="py-2 pl-4 text-right">משמרות</th>
+                    <th className="py-2 pl-4 text-right">שעות</th>
+                    <th className="py-2 pl-4 text-right">שכר</th>
+                    <th className="py-2 text-right">צפי מכירות</th>
                   </tr>
                 </thead>
                 <tbody>
                   {report.employees.map(emp => (
                     <tr key={emp.employeeId} className="border-b border-slate-50">
-                      <td className="py-2 pr-4 font-medium">{emp.name}</td>
-                      <td className="py-2 pr-4">{emp.shiftCount}</td>
-                      <td className="py-2 pr-4">{emp.hours}h</td>
-                      <td className="py-2 pr-4">${Math.round(emp.laborCost).toLocaleString()}</td>
+                      <td className="py-2 pl-4 font-medium">{emp.name}</td>
+                      <td className="py-2 pl-4">{emp.shiftCount}</td>
+                      <td className="py-2 pl-4">{emp.hours}</td>
+                      <td className="py-2 pl-4">${Math.round(emp.laborCost).toLocaleString()}</td>
                       <td className="py-2">${Math.round(emp.projectedSales).toLocaleString()}</td>
                     </tr>
                   ))}

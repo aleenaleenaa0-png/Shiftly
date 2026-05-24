@@ -50,7 +50,9 @@ import {
   mapApiShiftToShift,
   getShiftForDaySlot,
   WEEKLY_SHIFT_SLOT_COUNT,
+  formatDayHe,
 } from './utils/week';
+import { formatUserRoleHe } from './utils/labelsHe';
 import { buildScheduleReport } from './utils/scheduleReport';
 import WeekNavigator from './components/WeekNavigator';
 import AppToast from './components/AppToast';
@@ -221,7 +223,7 @@ const App: React.FC = () => {
           setBackendStatus(data.message);
         } else {
           setBackendStatus(
-            `Connected (Employees: ${data.employees ?? 0}, Shifts: ${data.shifts ?? 0})`
+            `מחובר (עובדים: ${data.employees ?? 0}, משמרות: ${data.shifts ?? 0})`
           );
         }
       } catch (err: any) {
@@ -971,7 +973,7 @@ const App: React.FC = () => {
       `}</style>
       
       {(user.role === 'Manager' || user.userType === 'Manager') && (
-      <nav className="bg-white/95 backdrop-blur-xl border-b border-rose-200/60 shadow-sm px-4 sm:px-6 py-3 sticky top-0 z-50">
+      <nav className="bg-white/95 backdrop-blur-xl border-b border-rose-200/60 shadow-sm px-4 sm:px-6 py-3 sticky top-0 z-50 dir-rtl">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
           {/* Logo and Brand */}
           <div className="flex items-center space-x-3 min-w-0">
@@ -981,13 +983,13 @@ const App: React.FC = () => {
                 <span className="text-xl font-black bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 bg-clip-text text-transparent">
                   Shiftly
                 </span>
-                <span className="hidden sm:inline-block text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                  Smart Scheduling
+                <span className="hidden sm:inline-block text-[10px] font-semibold text-slate-500 tracking-wider">
+                  שיבוץ חכם
                 </span>
               </div>
               {(user.role === 'Manager' || user.userType === 'Manager') && (
                 <span className="text-[9px] text-rose-500 font-semibold mt-0.5">
-                  <i className="fas fa-user-shield mr-1"></i>Manager Dashboard
+                  <i className="fas fa-user-shield ml-1"></i>לוח בקרה — מנהל
                 </span>
               )}
               {(user.role === 'Employee' || user.userType === 'Employee') && (
@@ -1011,7 +1013,7 @@ const App: React.FC = () => {
                 }`}
               >
                 <i className="fas fa-calendar-alt mr-2"></i>
-                <span>Schedule</span>
+                <span>לוח שיבוץ</span>
               </button>
             )}
             
@@ -1027,7 +1029,7 @@ const App: React.FC = () => {
                   }`}
                 >
                   <i className="fas fa-users mr-2"></i>
-                  <span>Employees</span>
+                  <span>עובדים</span>
                 </button>
                 <button
                   onClick={() => setPage('users')}
@@ -1038,7 +1040,7 @@ const App: React.FC = () => {
                   }`}
                 >
                   <i className="fas fa-user-shield mr-2"></i>
-                  <span>Users</span>
+                  <span>משתמשים</span>
                 </button>
               </>
             )}
@@ -1053,49 +1055,78 @@ const App: React.FC = () => {
               {backendError && (
                 <span className="text-xs font-medium text-red-500 bg-red-50 px-2 py-1 rounded-full">
                   <i className="fas fa-exclamation-circle mr-1"></i>
-                  Offline
+                  לא מחובר
                 </span>
               )}
               {backendStatus && !backendError && (
                 <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
                   <i className="fas fa-check-circle mr-1"></i>
-                  Connected
+                  מחובר
                 </span>
               )}
             </div>
 
             {/* Manager Tools */}
             {(user.role === 'Manager' || user.userType === 'Manager') && (
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button 
                     onClick={handleAutoFill}
                     disabled={isAutoFilling}
-                    className="flex items-center space-x-2 bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 hover:from-rose-400 hover:via-purple-400 hover:to-cyan-400 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-rose-500/30 hover:shadow-lg hover:shadow-rose-500/40 disabled:opacity-50 transform hover:scale-105 active:scale-95 relative overflow-hidden group"
-                    title="Auto Schedule Shifts"
+                    className="flex items-center gap-2 bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 hover:from-rose-400 hover:via-purple-400 hover:to-cyan-400 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md shadow-rose-500/25 hover:shadow-lg disabled:opacity-50 relative overflow-hidden group"
+                    title="שיבוץ אוטומטי"
                 >
                   <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></span>
-                  <span className="relative z-10 flex items-center">
-                    <i className={`fas ${isAutoFilling ? 'fa-spinner fa-spin' : 'fa-magic'}`}></i>
-                    <span className="hidden sm:inline ml-2">Auto Schedule</span>
+                  <span className="relative z-10 flex items-center gap-2">
+                    <span className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+                      <i className={`fas ${isAutoFilling ? 'fa-spinner fa-spin' : 'fa-magic'} text-sm`}></i>
+                    </span>
+                    <span className="hidden sm:inline">שיבוץ אוטומטי</span>
                   </span>
                 </button>
                 <button 
+                    type="button"
                     onClick={runScheduleReport}
-                    className="flex items-center space-x-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg transform hover:scale-105 active:scale-95"
+                    className="flex items-center gap-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md shadow-violet-500/30 hover:shadow-lg hover:shadow-violet-500/40 active:scale-[0.98]"
                     title="דוח שבועי"
                 >
-                    <i className="fas fa-chart-line"></i>
-                    <span className="hidden sm:inline ml-2">דוח</span>
+                    <span className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
+                      <i className="fas fa-chart-pie text-sm" aria-hidden />
+                    </span>
+                    <span className="hidden sm:inline whitespace-nowrap">דוח שבועי</span>
                 </button>
                 <button
+                    type="button"
                     onClick={handlePublishSchedule}
                     disabled={publishingSchedule || schedulePublished}
-                    className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg transform hover:scale-105 active:scale-95"
-                    title="פרסום הלוח לעובדים"
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md active:scale-[0.98] disabled:cursor-not-allowed ${
+                      schedulePublished
+                        ? 'bg-emerald-50 text-emerald-800 border-2 border-emerald-300 shadow-emerald-500/10'
+                        : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-500/30 hover:shadow-lg hover:shadow-emerald-500/40 disabled:opacity-60'
+                    }`}
+                    title={schedulePublished ? 'הלוח כבר פורסם לעובדים' : 'פרסום הלוח לעובדים'}
                 >
-                  <i className={`fas ${publishingSchedule ? 'fa-spinner fa-spin' : 'fa-share-nodes'}`} />
-                  <span className="hidden sm:inline ml-2">
-                    {schedulePublished ? 'פורסם' : 'פרסום לעובדים'}
+                  <span
+                    className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                      schedulePublished ? 'bg-emerald-200/80' : 'bg-white/20'
+                    }`}
+                  >
+                    <i
+                      className={`fas text-sm ${
+                        publishingSchedule
+                          ? 'fa-spinner fa-spin'
+                          : schedulePublished
+                            ? 'fa-circle-check'
+                            : 'fa-paper-plane'
+                      }`}
+                      aria-hidden
+                    />
+                  </span>
+                  <span className="hidden sm:inline whitespace-nowrap">
+                    {publishingSchedule
+                      ? 'מפרסם...'
+                      : schedulePublished
+                        ? 'פורסם לעובדים'
+                        : 'פרסום לעובדים'}
                   </span>
                 </button>
               </div>
@@ -1105,15 +1136,15 @@ const App: React.FC = () => {
             <div className="flex items-center space-x-3 pl-3 border-l border-rose-200">
               <div className="text-right hidden sm:block">
                 <p className="text-xs font-bold text-slate-700">{user.fullName}</p>
-                <p className="text-[10px] text-slate-500">{user.role || user.userType}</p>
+                <p className="text-[10px] text-slate-500">{formatUserRoleHe(user.role || user.userType)}</p>
               </div>
               <button
                 onClick={handleLogout}
                 className="flex items-center space-x-2 bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg transform hover:scale-105 active:scale-95"
-                title="Logout"
+                title="יציאה"
               >
                 <i className="fas fa-sign-out-alt"></i>
-                <span className="hidden sm:inline">Logout</span>
+                <span className="hidden sm:inline">יציאה</span>
               </button>
             </div>
           </div>
@@ -1131,8 +1162,8 @@ const App: React.FC = () => {
       ) : currentPage === 'availability' ? (
         <EmployeeAvailability user={user} />
       ) : (
-        <main className="relative z-10 max-w-[90rem] mx-auto w-full px-3 lg:px-6 py-5 flex flex-col lg:flex-row gap-5 items-start">
-        <div className="flex-1 min-w-0">
+        <main className="relative z-10 max-w-[90rem] mx-auto w-full px-3 lg:px-6 py-5 flex flex-col lg:flex-row gap-5 items-start dir-rtl">
+        <div className="flex-1 min-w-0 text-right">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
             <WeekNavigator weekMonday={weekMonday} onChange={setWeekMonday} />
             {schedulePublished && (
@@ -1192,15 +1223,15 @@ const App: React.FC = () => {
                     <tr>
                       <td colSpan={3} className="px-8 py-12 text-center">
                         <i className="fas fa-spinner fa-spin text-rose-500 text-2xl mb-2"></i>
-                        <p className="text-slate-600 font-bold">Loading shifts from database...</p>
+                        <p className="text-slate-600 font-bold">טוען משמרות...</p>
                       </td>
                     </tr>
                   ) : shifts.length === 0 ? (
                     <tr>
                       <td colSpan={3} className="px-8 py-12 text-center">
                         <i className="fas fa-calendar-times text-slate-400 text-2xl mb-2"></i>
-                        <p className="text-slate-600 font-bold">No shifts found</p>
-                        <p className="text-slate-500 text-sm mt-1">Shifts will appear here once they are created</p>
+                        <p className="text-slate-600 font-bold">לא נמצאו משמרות</p>
+                        <p className="text-slate-500 text-sm mt-1">משמרות יופיעו כאן לאחר יצירתן במערכת</p>
                       </td>
                     </tr>
                   ) : (
@@ -1211,7 +1242,7 @@ const App: React.FC = () => {
                       return (
                         <tr key={day} className="group">
                           <td className="px-3 py-3 text-sm font-bold text-slate-800 border-r border-rose-100 bg-rose-50/40 align-middle text-center">
-                            {day}
+                            {formatDayHe(day)}
                           </td>
                           <td className="px-2 py-2 align-top">
                             {morningShift ? (

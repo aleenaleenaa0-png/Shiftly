@@ -5,6 +5,7 @@
 import React, { useMemo, useState } from 'react';
 import { Employee } from '../types';
 import { normalizeProductivityScore } from '../utils/throughput';
+import { DAY_SHORT_HE, formatRoleHe } from '../utils/labelsHe';
 
 interface EmployeeSidebarProps {
   employees: Employee[];
@@ -82,8 +83,8 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
       availableShifts.push({
         day: dayNames[dayIndex] || '',
         time: isMorning ? 'Morning (09-15)' : 'Afternoon (15-21)',
-        dayAbbrev: dayAbbrevs[dayIndex] || '',
-        shortLabel: isMorning ? 'AM' : 'PM',
+        dayAbbrev: DAY_SHORT_HE[dayAbbrevs[dayIndex]] || dayAbbrevs[dayIndex] || '',
+        shortLabel: isMorning ? 'ב׳' : 'ע׳',
       });
     }
 
@@ -92,7 +93,7 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
         <div className="mt-3 pt-3 border-t border-rose-200/50">
           <p className="text-[9px] text-slate-400 italic flex items-center">
             <i className="fas fa-info-circle mr-1"></i>
-            No availability set - worker needs to set availability first
+            לא הוגדרה זמינות — העובד/ת מעדכן/ת בפורטל
           </p>
         </div>
       );
@@ -188,13 +189,13 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
         {loading ? (
           <div className="text-center py-12">
             <i className="fas fa-spinner fa-spin text-rose-500 text-2xl mb-2"></i>
-            <p className="text-slate-600 font-bold">Loading employees...</p>
+            <p className="text-slate-600 font-bold">טוען עובדים...</p>
           </div>
         ) : employees.length === 0 ? (
           <div className="text-center py-12">
             <i className="fas fa-users-slash text-slate-400 text-2xl mb-2"></i>
-            <p className="text-slate-600 font-bold">No employees found</p>
-            <p className="text-slate-500 text-sm mt-1">Employees will appear here once they are added</p>
+            <p className="text-slate-600 font-bold">אין עובדים</p>
+            <p className="text-slate-500 text-sm mt-1">עובדים יופיעו כאן לאחר הוספתם</p>
           </div>
         ) : filteredEmployees.length === 0 ? (
           <div className="text-center py-12 flex-1">
@@ -240,7 +241,7 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-bold text-slate-800 truncate">{emp.name}</p>
-                      <p className="text-[9px] text-slate-500">{emp.hourlyRate}₪/שעה</p>
+                      <p className="text-[9px] text-slate-500">{formatRoleHe(emp.role)} · {emp.hourlyRate}₪/שעה</p>
                     </div>
                     <div className="text-left shrink-0">
                       <span className="text-sm font-black text-slate-800">{normalized.toFixed(1)}</span>
