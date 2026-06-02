@@ -28,10 +28,34 @@ namespace Backend
             var builder = WebApplication.CreateBuilder(args);
 
             // إعداد Access: جدول Dual مطلوب لمحرك Jet (تفاصيل تقنية — لا يحتاج اختبار يدوي)
-            var connectionString = builder.Configuration.GetConnectionString("ShiftlyConnection")
-                ?? "Data Source=C:\\Users\\aleen\\Documents\\ShiftlyDB.accdb";
+            var employeeStore = new AccessEmployeeStore(builder.Configuration);
+            builder.Services.AddSingleton(employeeStore);
+
+            try
+            {
+                employeeStore.EnsureDatabaseReady();
+                Console.WriteLine("═══════════════════════════════════════════════════════");
+                Console.WriteLine($"  ACCESS DATABASE (all workers saved here):");
+                Console.WriteLine($"  {employeeStore.FilePath}");
+                Console.WriteLine($"  Employees in table: {employeeStore.Count()}");
+                Console.WriteLine("  Close Access before sign-up. Reopen table after sign-up to see rows.");
+                Console.WriteLine("═══════════════════════════════════════════════════════");
+            }
+            catch (Exception dbInitEx)
+            {
+                Console.WriteLine($"❌ Database init failed: {dbInitEx.Message}");
+            }
+
+            var connectionString = ShiftBootstrap.NormalizeOleDbConnectionString(
+                builder.Configuration.GetConnectionString("ShiftlyConnection")
+                ?? DatabasePaths.DefaultConnectionString);
+            var employeeSchema = EmployeeTableSchema.Load(connectionString);
+            EmployeeColumnConfig.ProductivityColumnName = employeeSchema.ProductivityColumn;
             EnsureDualTableExists(connectionString);
             SetJetDualToTableDual();
+            AccessSchemaHelper.EnsureUsersTable(connectionString);
+            AccessSchemaHelper.EnsureEmployeeAuthColumns(connectionString);
+            Console.WriteLine($"✓ All API data uses: {DatabaseConnection.GetDataSource(connectionString)}");
 
             // Add services to the container.
             builder.Services.AddControllersWithViews()
@@ -61,7 +85,6 @@ namespace Backend
             builder.Services.AddDbContext<AppData>(options =>
             {
                 options.UseJet(connectionString);
-                // Disable connection pooling for Access to avoid lock issues
                 options.EnableServiceProviderCaching(false);
             }, ServiceLifetime.Scoped);
 
@@ -110,35 +133,7 @@ namespace Backend
                             Console.WriteLine($"⚠ EnsureCreated warning: {ensureEx.Message}");
                             // Continue anyway - tables might already exist
                             
-                            // Try to manually create Users table if EnsureCreated didn't work
-                            try
-                            {
-                                var testUsers = await db.Users.CountAsync();
-                                Console.WriteLine($"✓ Users table exists (has {testUsers} records)");
-                            }
-                            catch (Exception usersEx)
-                            {
-                                if (usersEx.Message.Contains("cannot find") || usersEx.Message.Contains("does not exist"))
-                                {
-                                    Console.WriteLine("⚠ Users table doesn't exist. Creating it manually...");
-                                    try
-                                    {
-                                        await db.Database.ExecuteSqlRawAsync(@"
-                                            CREATE TABLE Users (
-                                                UserId AUTOINCREMENT PRIMARY KEY,
-                                                Email TEXT(200) NOT NULL,
-                                                FullName TEXT(100) NOT NULL,
-                                                Password TEXT(200) NOT NULL
-                                            )
-                                        ");
-                                        Console.WriteLine("✓ Created Users table manually");
-                                    }
-                                    catch (Exception createUsersEx)
-                                    {
-                                        Console.WriteLine($"⚠ Could not create Users table: {createUsersEx.Message}");
-                                    }
-                                }
-                            }
+                            AccessSchemaHelper.EnsureUsersTable(connectionString);
                         }
                         
                         try

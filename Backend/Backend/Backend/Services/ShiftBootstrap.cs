@@ -110,16 +110,28 @@ namespace Backend.Services
             Console.WriteLine($"✓ Seeded {shifts.Count} shifts for week {weekStart:yyyy-MM-dd} (Shift_ID 1..{shifts.Count} when DB was empty)");
         }
 
-        public static string NormalizeOleDbConnectionString(string connectionString)
+        public static string NormalizeOleDbConnectionString(string? connectionString, string? databasePassword = null)
         {
             var raw = connectionString?.Trim()
-                ?? "Data Source=C:\\Users\\aleen\\Documents\\ShiftlyDB.accdb";
+                ?? DatabasePaths.DefaultConnectionString;
+
             if (raw.Contains("Provider=", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!string.IsNullOrEmpty(databasePassword)
+                    && !raw.Contains("Database Password", StringComparison.OrdinalIgnoreCase))
+                {
+                    return raw.TrimEnd(';') + $";Jet OLEDB:Database Password={databasePassword};";
+                }
                 return raw;
+            }
+
             var dataSource = raw.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase)
                 ? raw
                 : "Data Source=" + raw;
-            return "Provider=Microsoft.ACE.OLEDB.12.0;" + dataSource + ";";
+            var result = "Provider=Microsoft.ACE.OLEDB.12.0;" + dataSource + ";";
+            if (!string.IsNullOrEmpty(databasePassword))
+                result += $"Jet OLEDB:Database Password={databasePassword};";
+            return result;
         }
 
         /// <summary>יוצר 14 משמרות לשבוע (OleDb בלבד — נמנע משגיאת #Dual ב-Access).</summary>

@@ -11,6 +11,7 @@
 // =============================================================================
 
 using Backend.Models;
+using Backend.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
@@ -25,11 +26,18 @@ namespace Backend.Controllers
     public class AccountController : ControllerBase
     {
         private readonly AppData _db;
+        private readonly IConfiguration _config;
+        private readonly AccessEmployeeStore _employees;
 
-        public AccountController(AppData db)
+        public AccountController(AppData db, IConfiguration config, AccessEmployeeStore employees)
         {
             _db = db;
+            _config = config;
+            _employees = employees;
         }
+
+        private string ConnectionString => ShiftBootstrap.NormalizeOleDbConnectionString(
+            _config.GetConnectionString("ShiftlyConnection") ?? DatabasePaths.DefaultConnectionString);
 
         /// <summary>تسجيل الدخول — يُرجع دور Manager أو Employee مع Cookie.</summary>
         [HttpPost("login")]
@@ -81,51 +89,12 @@ namespace Backend.Controllers
                     });
                 }
 
-                // Ensure Users table exists
-                try
-                {
-                    await _db.Database.EnsureCreatedAsync();
-                }
-                catch (Exception ensureEx)
-                {
-                    Console.WriteLine($"⚠ EnsureCreated warning: {ensureEx.Message}");
-                    // Continue anyway - table might already exist
-                }
+                AccessSchemaHelper.EnsureUsersTable(ConnectionString);
 
                 // First check if it's a manager (User)
                 User? user = null;
                 try
                 {
-                    // Check if Users table exists by trying to count
-                    try
-                    {
-                        var userCount = await _db.Users.CountAsync();
-                        Console.WriteLine($"Users table exists with {userCount} records");
-                    }
-                    catch (Exception tableEx)
-                    {
-                        if (tableEx.Message.Contains("cannot find") || tableEx.Message.Contains("does not exist"))
-                        {
-                            Console.WriteLine("Users table doesn't exist. Creating it...");
-                            try
-                            {
-                                await _db.Database.ExecuteSqlRawAsync(@"
-                                    CREATE TABLE Users (
-                                        UserId AUTOINCREMENT PRIMARY KEY,
-                                        Email TEXT(200) NOT NULL,
-                                        FullName TEXT(100) NOT NULL,
-                                        Password TEXT(200) NOT NULL
-                                    )
-                                ");
-                                Console.WriteLine("✓ Created Users table");
-                            }
-                            catch (Exception createEx)
-                            {
-                                Console.WriteLine($"⚠ Could not create Users table: {createEx.Message}");
-                            }
-                        }
-                    }
-
                     // Query user without Include first to avoid relationship issues
                     Console.WriteLine($"Attempting to query Users table for email: {email}");
                     try
@@ -261,42 +230,38 @@ namespace Backend.Controllers
 
                 // Check if it's an employee - ONLY if NOT manager credentials
                 Employee? employee = null;
-                
-                // Skip employee check if it's manager credentials (already handled above)
+
                 if (!isManagerCredentials)
                 {
                     try
                     {
-                        List<Employee> allEmployees;
-                        try
-                        {
-                            allEmployees = await _db.Employees.ToListAsync();
-                        }
-                        catch (Exception allEx)
-                        {
-                            allEmployees = new List<Employee>();
-                    }
-                    
-                    employee = allEmployees
-                        .Where(e =>
-                            e.Email != null &&
-                            e.Email.Trim().Equals(email, StringComparison.OrdinalIgnoreCase) &&
-                            !string.IsNullOrEmpty(e.Password) &&
-                            e.Password.Trim() == password)
+                        employee = await _db.Employees
+                            .Where(e =>
+                                e.Email != null &&
+                                e.Email.Trim().Equals(email, StringComparison.OrdinalIgnoreCase) &&
+                                e.Password != null &&
+                                e.Password.Trim() == password)
                             .OrderBy(e => e.EmployeeId)
-                        .FirstOrDefault();
-                    
-                }
-                catch (Exception empEx)
-                {
-                        // Error in employee lookup - set to null and continue
-                    employee = null;
-                }
-                
-                // Safety check - if employee is null, make sure we don't try to access it
-                if (employee != null && employee.EmployeeId <= 0)
-                {
-                    employee = null;
+                            .FirstOrDefaultAsync();
+                    }
+                    catch (Exception empEx)
+                    {
+                        Console.WriteLine($"⚠ EF employee login lookup: {empEx.Message}");
+                    }
+
+                    if (employee == null)
+                    {
+                        var oleEmp = _employees.FindByEmailPassword(email, password);
+                        if (oleEmp.HasValue)
+                        {
+                            employee = new Employee
+                            {
+                                EmployeeId = oleEmp.Value.EmployeeId,
+                                FirstName = oleEmp.Value.FirstName,
+                                Email = oleEmp.Value.Email,
+                                Password = password
+                            };
+                        }
                     }
                 }
 
@@ -403,6 +368,26 @@ namespace Backend.Controllers
             }
         }
 
+        /// <summary>Where app saves data — open this exact file in Access.</summary>
+        [HttpGet("database-info")]
+        public IActionResult GetDatabaseInfo()
+        {
+            try
+            {
+                _employees.EnsureDatabaseReady();
+                return Ok(new
+                {
+                    databasePath = _employees.FilePath,
+                    employeeCount = _employees.Count(),
+                    employees = _employees.ListAll()
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
         /// <summary>تسجيل عامل جديد — يُحفظ في Employees (ليس Users).</summary>
         [HttpPost("signup")]
         public async Task<IActionResult> SignUp([FromBody] SignUpDto signUpDto)
@@ -428,366 +413,61 @@ namespace Backend.Controllers
                     return BadRequest(new { error = "Password is required" });
                 }
 
-                // Ensure Users table exists - use same approach as Stores table
-                try
-                {
-                    // Try to query the table to see if it exists with correct schema
-                    var testUser = await _db.Users
-                        .OrderBy(u => u.UserId)
-                        .Select(u => new { u.UserId, u.Email, u.FullName, u.Password })
-                        .FirstOrDefaultAsync();
-                    Console.WriteLine("✓ Users table exists with correct schema");
-                }
-                catch (Exception tableEx)
-                {
-                    // Table doesn't exist or has wrong schema - create it using same method as Stores
-                    Console.WriteLine($"⚠ Users table issue: {tableEx.Message}. Creating table...");
-                    
-                    try
-                    {
-                        // Drop table if it exists (might have wrong schema)
-                        try
-                        {
-                            await _db.Database.ExecuteSqlRawAsync("DROP TABLE Users");
-                            Console.WriteLine("✓ Dropped existing Users table");
-                        }
-                        catch (Exception dropEx)
-                        {
-                            // Table doesn't exist, that's fine
-                            Console.WriteLine($"⚠ Could not drop (table doesn't exist): {dropEx.Message}");
-                        }
+                AccessSchemaHelper.EnsureUsersTable(ConnectionString);
 
-                        // Create Users table using EXACT same syntax as Stores (which works)
-                        // The key is using AUTOINCREMENT PRIMARY KEY together on same line
-                        await _db.Database.ExecuteSqlRawAsync(@"
-                            CREATE TABLE Users (
-                                UserId AUTOINCREMENT PRIMARY KEY,
-                                Email TEXT(200) NOT NULL,
-                                FullName TEXT(100) NOT NULL,
-                                Password TEXT(200) NOT NULL
-                            )
-                        ");
-                        Console.WriteLine("✓ Created Users table successfully");
-                        
-                        // Verify it was created
-                        var verify = await _db.Users.CountAsync();
-                        Console.WriteLine($"✓ Users table verified (has {verify} records)");
-                    }
-                    catch (Exception createEx)
-                    {
-                        Console.WriteLine($"⚠ Error creating Users table: {createEx.Message}");
-                        Console.WriteLine($"⚠ Inner exception: {createEx.InnerException?.Message}");
-                        
-                        // If direct creation fails, the table might already exist from EnsureCreated
-                        // Try to verify by querying
-                        try
-                        {
-                            var test = await _db.Users.CountAsync();
-                            Console.WriteLine($"✓ Users table exists (has {test} records) - creation may have succeeded");
-                        }
-                        catch (Exception finalEx)
-                        {
-                            return StatusCode(500, new 
-                            { 
-                                error = "Database setup error", 
-                                message = $"Could not create or verify Users table. Create error: {createEx.Message}. Verify error: {finalEx.Message}",
-                                details = createEx.InnerException?.Message ?? finalEx.Message
-                            });
-                        }
-                    }
-                }
-
-                // Access Employees table structure: EmployeeId, FirstName, HourlyWage, ProductivityScore, Email, Password
-                // NO LastName, NO Password columns
-                // Check if Email column exists (it should exist in Access)
-                bool emailColumnExists = false;
-                try
-                {
-                    // Try to query Email column to see if it exists
-                    var testQuery = await _db.Employees
-                        .Where(e => e.Email != null)
-                        .Take(1)
-                        .ToListAsync();
-                    emailColumnExists = true;
-                    Console.WriteLine("✓ Email column exists in Employees table");
-                }
-                catch (Exception schemaEx)
-                {
-                    if (schemaEx.Message.Contains("unknown field name") || schemaEx.Message.Contains("Email") || 
-                        schemaEx.Message.Contains("required parameters"))
-                    {
-                        Console.WriteLine("⚠ Email column missing. Adding it...");
-                        try
-                        {
-                            // Add Email column if it doesn't exist
-                            await _db.Database.ExecuteSqlRawAsync("ALTER TABLE Employees ADD COLUMN Email TEXT(200)");
-                            Console.WriteLine("✓ Added Email column");
-                            emailColumnExists = true;
-                        }
-                        catch (Exception addEmailEx)
-                        {
-                            // Column might already exist, that's fine
-                            if (addEmailEx.Message.Contains("already exists") || addEmailEx.Message.Contains("duplicate"))
-                            {
-                                Console.WriteLine("✓ Email column already exists");
-                                emailColumnExists = true;
-                            }
-                            else
-                            {
-                                Console.WriteLine($"⚠ Could not add Email column: {addEmailEx.Message}");
-                            }
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine($"⚠ Schema check error (non-Email related): {schemaEx.Message}");
-                    }
-                }
-
-                // Ensure Password column exists on Employees table
-                try
-                {
-                    await _db.Employees
-                        .Where(e => e.Password != null)
-                        .Take(1)
-                        .ToListAsync();
-                    Console.WriteLine("✓ Password column exists in Employees table");
-                }
-                catch (Exception passwordColEx)
-                {
-                    if (passwordColEx.Message.Contains("unknown field name") || passwordColEx.Message.Contains("Password") ||
-                        passwordColEx.Message.Contains("required parameters"))
-                    {
-                        Console.WriteLine("⚠ Password column missing. Adding it...");
-                        try
-                        {
-                            await _db.Database.ExecuteSqlRawAsync("ALTER TABLE Employees ADD COLUMN Password TEXT(200)");
-                            Console.WriteLine("✓ Added Password column");
-                        }
-                        catch (Exception addPasswordEx)
-                        {
-                            if (!addPasswordEx.Message.Contains("already exists") && !addPasswordEx.Message.Contains("duplicate"))
-                            {
-                                Console.WriteLine($"⚠ Could not add Password column: {addPasswordEx.Message}");
-                            }
-                        }
-                    }
-                }
-
-                // Check if email already exists (check both Users and Employees)
-                // Use safe query that handles missing Email column
-                bool emailExists = false;
-                
-                // Check Users table
-                try
-                {
-                    var existingUser = await _db.Users.FirstOrDefaultAsync(u => u.Email == signUpDto.Email);
-                    if (existingUser != null)
-                    {
-                        emailExists = true;
-                        Console.WriteLine($"⚠ Email {signUpDto.Email} already exists in Users table");
-                    }
-                }
-                catch (Exception userCheckEx)
-                {
-                    Console.WriteLine($"⚠ Error checking Users table: {userCheckEx.Message}");
-                    // Continue - might be a schema issue but we'll try Employees
-                }
-                
-                // Check Employees table - use raw SQL if Email column might not exist
-                if (!emailExists)
-                {
-                    try
-                    {
-                        if (emailColumnExists)
-                        {
-                            // Email column exists, use EF Core query
-                            var existingEmployee = await _db.Employees.FirstOrDefaultAsync(e => e.Email == signUpDto.Email);
-                            if (existingEmployee != null)
-                            {
-                                emailExists = true;
-                                Console.WriteLine($"⚠ Email {signUpDto.Email} already exists in Employees table");
-                            }
-                        }
-                        else
-                        {
-                            // Email column doesn't exist yet, use raw SQL to check
-                            // Since column doesn't exist, no email can exist yet
-                            Console.WriteLine("⚠ Email column doesn't exist yet - skipping email check (will be first employee)");
-                            emailExists = false;
-                        }
-                    }
-                    catch (Exception empCheckEx)
-                    {
-                        // If query fails, try raw SQL as fallback
-                        if (empCheckEx.Message.Contains("Email") || empCheckEx.Message.Contains("required parameters") || 
-                            empCheckEx.Message.Contains("unknown field"))
-                        {
-                            Console.WriteLine($"⚠ Email column check failed: {empCheckEx.Message}. Assuming email doesn't exist yet.");
-                            emailExists = false;
-                        }
-                        else
-                        {
-                            Console.WriteLine($"⚠ Error checking Employees table: {empCheckEx.Message}");
-                            // Continue - assume email doesn't exist to allow signup
-                        }
-                    }
-                }
-                
-                if (emailExists)
-                {
-                    return Conflict(new { error = "Email already registered" });
-                }
-
-                // IMPORTANT: Signup creates an Employee (Worker), NOT a Manager (User)
-                // Managers must be created through the UsersController by existing managers
-                // This endpoint is ONLY for employee/worker signup
                 var username = signUpDto.Username.Trim();
                 var password = signUpDto.Password.Trim();
-                var firstName = username; // Store username in FirstName
+                var email = signUpDto.Email.Trim();
+                var firstName = username;
 
-                // DETAILED PARAMETER VALIDATION AND LOGGING
-                Console.WriteLine("═══════════════════════════════════════════════════════");
-                Console.WriteLine("SIGNUP DEBUG - Parameter Validation");
-                Console.WriteLine("═══════════════════════════════════════════════════════");
-                Console.WriteLine($"Username: '{username}' (Length: {username?.Length ?? 0}, IsNullOrEmpty: {string.IsNullOrEmpty(username)})");
-                Console.WriteLine($"FirstName (from username): '{firstName}' (Length: {firstName?.Length ?? 0})");
-                Console.WriteLine($"Email: '{signUpDto.Email?.Trim()}' (Length: {signUpDto.Email?.Trim()?.Length ?? 0}, IsNullOrEmpty: {string.IsNullOrEmpty(signUpDto.Email?.Trim())})");
-                Console.WriteLine($"HourlyWage: 0 (Type: {0m.GetType().Name})");
-                Console.WriteLine($"ProductivityScore: 5.0 (Type: {5.0.GetType().Name})");
-                Console.WriteLine("═══════════════════════════════════════════════════════");
-
-                // Validate all required parameters
-                var validationErrors = new List<string>();
                 if (string.IsNullOrWhiteSpace(username))
-                    validationErrors.Add("Username is required and cannot be empty");
-                if (string.IsNullOrWhiteSpace(signUpDto.Email?.Trim()))
-                    validationErrors.Add("Email is required and cannot be empty");
-                if (string.IsNullOrWhiteSpace(password))
-                    validationErrors.Add("Password is required and cannot be empty");
+                    return BadRequest(new { error = "Username is required" });
+                if (string.IsNullOrWhiteSpace(email))
+                    return BadRequest(new { error = "Email is required" });
                 if (password.Length < 3)
-                    validationErrors.Add("Password must be at least 3 characters");
-                if (validationErrors.Any())
-                {
-                    var errorMsg = "Validation failed: " + string.Join("; ", validationErrors);
-                    Console.WriteLine($"❌ {errorMsg}");
-                    return BadRequest(new { error = "Validation failed", message = errorMsg, details = validationErrors });
-                }
+                    return BadRequest(new { error = "Password must be at least 3 characters" });
 
-                // Ensure Employees table exists with correct schema
+                if (_employees.EmailExists(email))
+                    return Conflict(new { error = "Email already registered" });
+
+                int newEmployeeId;
                 try
                 {
-                    // Try to ensure table exists and has correct structure
-                    await _db.Database.EnsureCreatedAsync();
-                    
-                    // Verify table structure by trying to query it
-                    var testCount = await _db.Employees.CountAsync();
-                    Console.WriteLine($"✓ Employees table exists with {testCount} records");
-                    
-                    // Try to get table schema information - only check columns that exist in Access
-                    try
+                    var id = _employees.Insert(firstName, email, password);
+                    if (!id.HasValue)
                     {
-                        var schemaTest = await _db.Employees
-                            .Select(e => new { 
-                                e.EmployeeId, 
-                                e.FirstName, 
-                                e.HourlyWage, 
-                                e.ProductivityScore, 
-                                e.Email,
-                                e.Password
-                            })
-                            .Take(1)
-                            .ToListAsync();
-                        Console.WriteLine("✓ All expected columns exist in Employees table");
-                    }
-                    catch (Exception schemaEx)
-                    {
-                        Console.WriteLine($"⚠ Schema check error: {schemaEx.Message}");
-                        if (schemaEx.Message.Contains("Email"))
+                        return StatusCode(500, new
                         {
-                            Console.WriteLine("⚠ Email column may be missing - will attempt to add it");
-                        }
+                            error = "Failed to create employee",
+                            message = "Could not save to Access. Close Microsoft Access and try again.",
+                            databasePath = _employees.FilePath
+                        });
                     }
+                    newEmployeeId = id.Value;
                 }
-                catch (Exception ensureEx)
+                catch (InvalidOperationException ex)
                 {
-                    Console.WriteLine($"⚠ EnsureCreated warning: {ensureEx.Message}");
-                    // Continue - table might already exist
-                }
-
-                Console.WriteLine($"Creating employee - Email: {signUpDto.Email.Trim()}, Username: {username}");
-
-                // Strategy: Always insert WITHOUT Email/Password first (these columns may not exist)
-                // Then add the columns if needed, then update the employee with Email/Password
-                int newEmployeeId = 0;
-                
-                Console.WriteLine("═══════════════════════════════════════════════════════");
-                Console.WriteLine("STEP 1: Creating employee with Access table structure");
-                Console.WriteLine($"  FirstName: '{firstName}'");
-                Console.WriteLine($"  HourlyWage: 0");
-                Console.WriteLine($"  ProductivityScore: 5.0");
-                Console.WriteLine($"  Email: '{signUpDto.Email.Trim()}'");
-                Console.WriteLine("═══════════════════════════════════════════════════════");
-                Console.WriteLine("═══════════════════════════════════════════════════════");
-                
-                var basicEmployee = new Employee
-                {
-                    FirstName = firstName,
-                    HourlyWage = 0m,
-                    ProductivityScore = 5.0,
-                    Email = signUpDto.Email.Trim(),
-                    Password = password
-                };
-                
-                try
-                {
-                    _db.Employees.Add(basicEmployee);
-                    await _db.SaveChangesAsync();
-                    newEmployeeId = basicEmployee.EmployeeId;
-                    Console.WriteLine($"✓ Employee created successfully with ID: {newEmployeeId}");
-                }
-                catch (Exception basicInsertEx)
-                {
-                    Console.WriteLine("═══════════════════════════════════════════════════════");
-                    Console.WriteLine($"❌ BASIC INSERT FAILED: {basicInsertEx.Message}");
-                    Console.WriteLine($"Error Type: {basicInsertEx.GetType().Name}");
-                    if (basicInsertEx.InnerException != null)
+                    return StatusCode(503, new
                     {
-                        Console.WriteLine($"Inner Exception: {basicInsertEx.InnerException.Message}");
-                    }
-                    Console.WriteLine("═══════════════════════════════════════════════════════");
-                            
-                            return StatusCode(500, new 
-                            { 
-                                error = "Failed to create employee", 
-                        message = $"Insert failed: {basicInsertEx.Message}",
-                        details = new
-                        {
-                            innerException = basicInsertEx.InnerException?.Message
-                        }
+                        error = "Database is locked",
+                        message = ex.Message,
+                        databasePath = _employees.FilePath
                     });
                 }
-                
-                Console.WriteLine("✓ Employee created with Email and Password");
 
-                // Fetch the final employee data
-                var finalEmployee = await _db.Employees
-                    .FirstOrDefaultAsync(e => e.EmployeeId == newEmployeeId);
-                
-                if (finalEmployee == null)
-                {
-                    throw new Exception("Employee was created but could not be retrieved");
-                }
+                var saved = AccessSchemaHelper.GetEmployeeById(ConnectionString, newEmployeeId);
 
                 return Ok(new
                 {
                     success = true,
                     message = "Account created successfully. Please login.",
+                    databasePath = _employees.FilePath,
+                    employee = saved,
                     user = new
                     {
-                        userId = finalEmployee.EmployeeId,
-                        fullName = finalEmployee.FirstName.Trim(), // Username is stored in FirstName
-                        email = finalEmployee.Email ?? signUpDto.Email.Trim(),
+                        userId = newEmployeeId,
+                        fullName = firstName,
+                        email,
                         role = "Employee",
                         userType = "Employee"
                     }

@@ -431,10 +431,11 @@ const App: React.FC = () => {
     setUser(userData);
     if (userData.role === 'Manager' || userData.userType === 'Manager') {
       setCurrentPage('schedule');
-      // Availability maps reset so manager-summary reloads fresh from Access
       setShiftAvailabilityMap(new Map());
       setEmployeeAvailabilityCount(new Map());
       setEmployeeAvailabilityMap(new Map());
+    } else if (userData.role === 'Employee' || userData.userType === 'Employee') {
+      setCurrentPage('availability');
     }
   };
   

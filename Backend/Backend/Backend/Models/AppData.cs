@@ -5,6 +5,7 @@
 // للمختبر: أي تغيير في أسماء الأعمدة في Access قد يحتاج تعديل هنا.
 // =============================================================================
 
+using Backend.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Models
@@ -54,7 +55,9 @@ namespace Backend.Models
             modelBuilder.Entity<Employee>(entity =>
             {
                 entity.Property(e => e.HourlyWage).HasColumnType("decimal(18,2)");
-                entity.Property(e => e.Password).HasMaxLength(200);
+                entity.Property(e => e.Password).HasColumnName("Password").HasMaxLength(200);
+                entity.Property(e => e.ProductivityScore)
+                    .HasColumnName(EmployeeColumnConfig.ProductivityColumnName);
             });
 
             modelBuilder.Entity<Employee>()

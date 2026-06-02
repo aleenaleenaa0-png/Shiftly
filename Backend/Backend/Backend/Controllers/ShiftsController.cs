@@ -8,6 +8,7 @@
 
 using Backend.Models;
 using Backend.Services;
+using Backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -29,7 +30,7 @@ namespace Backend.Controllers
 
         private string ConnectionString =>
             _config.GetConnectionString("ShiftlyConnection")
-            ?? "Data Source=C:\\Users\\aleen\\Documents\\ShiftlyDB.accdb";
+            ?? DatabasePaths.DefaultConnectionString;
 
         /// <summary>جلب مناوبات الأسبوع — يُستدعى من صفحة جدولة المدير.</summary>
         [HttpGet]

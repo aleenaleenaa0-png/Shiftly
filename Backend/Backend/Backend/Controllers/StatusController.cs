@@ -1,12 +1,11 @@
 // =============================================================================
 // StatusController.cs — فحص اتصال السيرفر وقاعدة البيانات
 // =============================================================================
-// GET /api/status — يُعرض في الواجهة "Connected (Employees: X, Shifts: Y)".
-// للمختبر: إن فشل الاتصال تحقق من تشغيل Backend وإغلاق Access.
-// =============================================================================
 
 using Backend.Models;
+using Backend.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Controllers
 {
@@ -15,35 +14,65 @@ namespace Backend.Controllers
     public class StatusController : ControllerBase
     {
         private readonly AppData _db;
+        private readonly AccessEmployeeStore _employees;
 
-        public StatusController(AppData db) => _db = db;
+        public StatusController(AppData db, AccessEmployeeStore employees)
+        {
+            _db = db;
+            _employees = employees;
+        }
 
         [HttpGet]
         public async Task<IActionResult> Get()
         {
+            string databasePath;
             try
             {
-                if (!await _db.Database.CanConnectAsync())
+                _employees.EnsureDatabaseReady();
+                databasePath = _employees.FilePath;
+            }
+            catch (Exception pathEx)
+            {
+                return Ok(new
                 {
-                    return Ok(new
+                    status = "error",
+                    message = pathEx.Message,
+                    databasePath = (string?)null,
+                    users = 0,
+                    employees = 0,
+                    shifts = 0,
+                    availabilities = 0
+                });
+            }
+
+            try
+            {
+                var employeeCount = _employees.Count();
+
+                int users = 0, shifts = 0, availabilities = 0;
+                try
+                {
+                    if (await _db.Database.CanConnectAsync())
                     {
-                        status = "disconnected",
-                        message = "Database file not found or cannot be accessed.",
-                        users = 0,
-                        employees = 0,
-                        shifts = 0,
-                        availabilities = 0
-                    });
+                        users = await _db.Users.CountAsync();
+                        shifts = await _db.Shifts.CountAsync();
+                        availabilities = await _db.Availabilities.CountAsync();
+                    }
+                }
+                catch
+                {
+                    // EF may fail on #Dual; employee list from OleDb is authoritative
                 }
 
                 return Ok(new
                 {
                     status = "connected",
                     message = "Database connection successful",
-                    users = _db.Users.Count(),
-                    employees = _db.Employees.Count(),
-                    shifts = _db.Shifts.Count(),
-                    availabilities = _db.Availabilities.Count()
+                    databasePath,
+                    users,
+                    employees = employeeCount,
+                    shifts,
+                    availabilities
                 });
             }
             catch (Exception ex)
@@ -52,6 +81,7 @@ namespace Backend.Controllers
                 {
                     status = "error",
                     message = ex.Message,
+                    databasePath,
                     users = 0,
                     employees = 0,
                     shifts = 0,

@@ -1,0 +1,24 @@
+
+SHIFTLY — OPEN THIS EXACT FILE IN MICROSOFT ACCESS
+
+====================================================
+
+
+
+C:\Project\Shiftly\Backend\DB\ShiftlyDB.accdb
+
+
+
+Employees in database right now: 3
+
+
+
+
+
+In Access: open this .accdb file directly (not External Data import).
+
+After sign-up: close the Employees table tab and reopen it, or press F5.
+
+
+
+Wrong file = empty table. The app only updates this path.

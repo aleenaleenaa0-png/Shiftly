@@ -36,7 +36,7 @@ namespace Backend.Controllers
         private string GetOleDbConnectionString()
         {
             var connectionString = _config.GetConnectionString("ShiftlyConnection")
-                ?? "Data Source=C:\\Users\\aleen\\Documents\\ShiftlyDB.accdb";
+                ?? DatabasePaths.DefaultConnectionString;
             if (!connectionString.Trim().Contains("Provider=", StringComparison.OrdinalIgnoreCase))
                 connectionString = "Provider=Microsoft.ACE.OLEDB.12.0;" + (connectionString.Trim().StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) ? connectionString.Trim() : "Data Source=" + connectionString.Trim()) + ";";
             return connectionString;
@@ -199,7 +199,7 @@ namespace Backend.Controllers
                     return BadRequest(new { error = "Invalid SlotNumber", message = "SlotNumber must be 1-14." });
 
                 var connStr = _config.GetConnectionString("ShiftlyConnection")
-                    ?? "Data Source=C:\\Users\\aleen\\Documents\\ShiftlyDB.accdb";
+                    ?? DatabasePaths.DefaultConnectionString;
                 if (!connStr.Trim().Contains("Provider=", StringComparison.OrdinalIgnoreCase))
                     connStr = "Provider=Microsoft.ACE.OLEDB.12.0;" + (connStr.Trim().StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) ? connStr.Trim() : "Data Source=" + connStr.Trim()) + ";";
 
@@ -446,7 +446,7 @@ ORDER BY Shift_StartTime";
                 // 2. The availability's ShiftId matches the current shift (for current week)
                 // We'll use raw SQL to handle this efficiently
                 var connectionString = _config.GetConnectionString("ShiftlyConnection")
-                    ?? "Data Source=C:\\Users\\aleen\\Documents\\ShiftlyDB.accdb";
+                    ?? DatabasePaths.DefaultConnectionString;
                 if (!string.IsNullOrEmpty(connectionString) && !connectionString.Trim().Contains("Provider=", StringComparison.OrdinalIgnoreCase))
                     connectionString = "Provider=Microsoft.ACE.OLEDB.12.0;" + (connectionString.Trim().StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) ? connectionString.Trim() : "Data Source=" + connectionString.Trim()) + ";";
                 
@@ -721,7 +721,7 @@ ORDER BY Shift_StartTime";
                 // Use raw SQL to get ALL availability records and match with shifts (including deleted ones if they still exist in DB).
                 // This ensures availability persists even after logout/login or week changes.
                 var connectionString = _config.GetConnectionString("ShiftlyConnection")
-                    ?? "Data Source=C:\\Users\\aleen\\Documents\\ShiftlyDB.accdb";
+                    ?? DatabasePaths.DefaultConnectionString;
                 if (!string.IsNullOrEmpty(connectionString) && !connectionString.Trim().Contains("Provider=", StringComparison.OrdinalIgnoreCase))
                     connectionString = "Provider=Microsoft.ACE.OLEDB.12.0;" + (connectionString.Trim().StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) ? connectionString.Trim() : "Data Source=" + connectionString.Trim()) + ";";
                 

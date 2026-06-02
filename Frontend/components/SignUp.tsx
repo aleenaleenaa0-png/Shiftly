@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import Logo from './Logo';
 
 interface SignUpProps {
+  /** Called after the employee is saved to the database — switches to login (no auto sign-in). */
   onSignUpSuccess: () => void;
   onSwitchToLogin: () => void;
 }
@@ -85,9 +86,14 @@ const SignUp: React.FC<SignUpProps> = ({ onSignUpSuccess, onSwitchToLogin }) => 
         throw new Error(data.error || data.message || `HTTP ${response.status}`);
       }
 
-      if (data.success) {
-        alert('Account created successfully! Please login with your credentials.');
+      if (data.success && data.employee?.EmployeeId) {
+        const dbHint = data.databasePath
+          ? `\n\nSAVED TO:\n${data.databasePath}\n\nIn Access: File → Open → this exact path → Employees table.\nClose & reopen the table (or press F5) to see the new row.\n\nSee also: OPEN_THIS_FILE_IN_ACCESS.txt in the same folder.`
+          : '';
+        alert(`Account created successfully! Please sign in with your email and password.${dbHint}`);
         onSignUpSuccess();
+      } else if (data.success) {
+        throw new Error('Server did not confirm the employee was saved. Is the backend running? Close Access and try again.');
       } else {
         throw new Error(data.error || 'Invalid response from server');
       }
