@@ -4,6 +4,7 @@
  */
 import React, { useState } from 'react';
 import Logo from './Logo';
+import { notify } from '../utils/notify';
 
 interface SignUpProps {
   /** Called after the employee is saved to the database — switches to login (no auto sign-in). */
@@ -19,6 +20,7 @@ const SignUp: React.FC<SignUpProps> = ({ onSignUpSuccess, onSwitchToLogin }) => 
     username: '',
   });
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -30,6 +32,7 @@ const SignUp: React.FC<SignUpProps> = ({ onSignUpSuccess, onSwitchToLogin }) => 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccess(false);
 
     const trimmed = {
       email: formData.email.trim(),
@@ -75,25 +78,25 @@ const SignUp: React.FC<SignUpProps> = ({ onSignUpSuccess, onSwitchToLogin }) => 
       } else if (response.ok) {
         data = { success: true };
       } else if (response.status === 503) {
-        throw new Error('Database is locked. Please close Microsoft Access if it\'s open.');
+        throw new Error('Service is temporarily unavailable. Please try again in a moment.');
       } else {
         throw new Error(`Server returned empty response (Status: ${response.status})`);
       }
 
       if (!response.ok) {
-        if (response.status === 503) throw new Error(data.message || 'Database is locked');
+        if (response.status === 503) {
+          throw new Error('Service is temporarily unavailable. Please try again in a moment.');
+        }
         if (response.status === 409) throw new Error(data.error || 'Email already registered');
         throw new Error(data.error || data.message || `HTTP ${response.status}`);
       }
 
       if (data.success && data.employee?.EmployeeId) {
-        const dbHint = data.databasePath
-          ? `\n\nSAVED TO:\n${data.databasePath}\n\nIn Access: File → Open → this exact path → Employees table.\nClose & reopen the table (or press F5) to see the new row.\n\nSee also: OPEN_THIS_FILE_IN_ACCESS.txt in the same folder.`
-          : '';
-        alert(`Account created successfully! Please sign in with your email and password.${dbHint}`);
-        onSignUpSuccess();
+        setSuccess(true);
+        notify('Account created! Sign in with your email and password.', 'success');
+        window.setTimeout(() => onSignUpSuccess(), 2200);
       } else if (data.success) {
-        throw new Error('Server did not confirm the employee was saved. Is the backend running? Close Access and try again.');
+        throw new Error('Could not confirm your account was saved. Please try again.');
       } else {
         throw new Error(data.error || 'Invalid response from server');
       }
@@ -124,12 +127,32 @@ const SignUp: React.FC<SignUpProps> = ({ onSignUpSuccess, onSwitchToLogin }) => 
             </h2>
 
             {error && (
-              <div className="mb-6 bg-red-50 border-2 border-red-200 rounded-xl p-4 flex items-center space-x-3">
-                <i className="fas fa-exclamation-circle text-red-500"></i>
+              <div className="mb-6 bg-red-50 border-2 border-red-200 rounded-xl p-4 flex items-start gap-3">
+                <i className="fas fa-exclamation-circle text-red-500 mt-0.5"></i>
                 <span className="text-red-700 font-medium text-sm">{error}</span>
               </div>
             )}
 
+            {success ? (
+              <div className="py-6 text-center space-y-5">
+                <div className="mx-auto w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center">
+                  <i className="fas fa-check text-3xl text-emerald-600"></i>
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-800">Account created</h3>
+                  <p className="text-slate-600 text-sm mt-2 max-w-xs mx-auto">
+                    Your worker account is ready. Sign in with the email and password you just set.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onSignUpSuccess}
+                  className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white px-6 py-3 rounded-xl font-bold shadow-lg"
+                >
+                  Continue to Sign In
+                </button>
+              </div>
+            ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">Username *</label>
@@ -199,7 +222,9 @@ const SignUp: React.FC<SignUpProps> = ({ onSignUpSuccess, onSwitchToLogin }) => 
                 )}
               </button>
             </form>
+            )}
 
+            {!success && (
             <div className="mt-6 pt-6 border-t border-slate-200">
               <p className="text-sm text-slate-600 text-center">
                 Already have an account?{' '}
@@ -208,6 +233,7 @@ const SignUp: React.FC<SignUpProps> = ({ onSignUpSuccess, onSwitchToLogin }) => 
                 </button>
               </p>
             </div>
+            )}
           </div>
         </div>
       </div>
