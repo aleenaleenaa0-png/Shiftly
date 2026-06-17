@@ -65,6 +65,7 @@ import {
 import { runFastAutoSchedule, pickBestEmployeeForShift } from './utils/autoSchedule';
 
 type Page = 'schedule' | 'employees' | 'availability' | 'users';
+const PRIMARY_MANAGER_EMAIL = 'manager@Shiftly.com';
 
 interface User {
   userId: number;
@@ -73,6 +74,13 @@ interface User {
   role?: string;
   userType?: string;
 }
+
+const isManagerUser = (candidate: User | null) =>
+  candidate?.role === 'Manager' || candidate?.userType === 'Manager';
+
+const isPrimaryManager = (candidate: User | null) =>
+  isManagerUser(candidate) &&
+  candidate?.email?.toLowerCase() === PRIMARY_MANAGER_EMAIL.toLowerCase();
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<Page>('schedule');
@@ -86,7 +94,7 @@ const App: React.FC = () => {
     }
     
     const isEmployee = user.role === 'Employee' || user.userType === 'Employee';
-    const isManager = user.role === 'Manager' || user.userType === 'Manager';
+    const isManager = isManagerUser(user);
     
     // Employees can only access availability page
     if (isEmployee && page !== 'availability') {
@@ -94,8 +102,13 @@ const App: React.FC = () => {
       return;
     }
     
-    // Managers can access schedule, employees, and users pages, but not availability
+    // Managers can access schedule and employees; only the primary manager can manage users.
     if (isManager && page === 'availability') {
+      setCurrentPage('schedule');
+      return;
+    }
+
+    if (isManager && page === 'users' && !isPrimaryManager(user)) {
       setCurrentPage('schedule');
       return;
     }
@@ -206,6 +219,8 @@ const App: React.FC = () => {
           // If employee, redirect to availability page
           if (userData.role === 'Employee' || userData.userType === 'Employee') {
             setCurrentPage('availability');
+          } else if (isManagerUser(userData) && !isPrimaryManager(userData)) {
+            setCurrentPage('schedule');
           }
         } else {
           // Not authenticated - ensure user is null
@@ -429,7 +444,7 @@ const App: React.FC = () => {
 
   const handleLoginSuccess = (userData: User) => {
     setUser(userData);
-    if (userData.role === 'Manager' || userData.userType === 'Manager') {
+    if (isManagerUser(userData)) {
       setCurrentPage('schedule');
       setShiftAvailabilityMap(new Map());
       setEmployeeAvailabilityCount(new Map());
@@ -1000,17 +1015,19 @@ const App: React.FC = () => {
                   <i className="fas fa-users mr-2"></i>
                   <span>עובדים</span>
                 </button>
-                <button
-                  onClick={() => setPage('users')}
-                  className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all flex items-center ${
-                    currentPage === 'users'
-                      ? 'bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 text-white shadow-md shadow-rose-500/30 transform hover:scale-105'
-                      : 'text-slate-600 hover:bg-rose-50 hover:text-rose-600'
-                  }`}
-                >
-                  <i className="fas fa-user-shield mr-2"></i>
-                  <span>משתמשים</span>
-                </button>
+                {isPrimaryManager(user) && (
+                  <button
+                    onClick={() => setPage('users')}
+                    className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all flex items-center ${
+                      currentPage === 'users'
+                        ? 'bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 text-white shadow-md shadow-rose-500/30 transform hover:scale-105'
+                        : 'text-slate-600 hover:bg-rose-50 hover:text-rose-600'
+                    }`}
+                  >
+                    <i className="fas fa-user-shield mr-2"></i>
+                    <span>משתמשים</span>
+                  </button>
+                )}
               </>
             )}
             
@@ -1130,7 +1147,7 @@ const App: React.FC = () => {
         <WorkerPortal user={user} onLogout={handleLogout} />
       ) : currentPage === 'employees' ? (
         <EmployeeManagement user={user} />
-      ) : currentPage === 'users' ? (
+      ) : currentPage === 'users' && isPrimaryManager(user) ? (
         <UserManagement />
       ) : currentPage === 'availability' ? (
         <EmployeeAvailability user={user} />

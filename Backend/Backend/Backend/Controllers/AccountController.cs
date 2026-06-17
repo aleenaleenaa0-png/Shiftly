@@ -25,6 +25,7 @@ namespace Backend.Controllers
     [ApiController]
     public class AccountController : ControllerBase
     {
+        private const string PrimaryManagerEmail = "manager@Shiftly.com";
         private readonly AppData _db;
         private readonly IConfiguration _config;
         private readonly AccessEmployeeStore _employees;
@@ -58,6 +59,7 @@ namespace Backend.Controllers
 
                 // Trim email and password to avoid whitespace issues
                 var email = loginDto.Email.Trim();
+                var normalizedEmail = email.ToLowerInvariant();
                 var password = loginDto.Password.Trim();
 
                 Console.WriteLine($"Login attempt - Email: {email?.Substring(0, Math.Min(email.Length, 20))}...");
@@ -100,7 +102,7 @@ namespace Backend.Controllers
                     try
                     {
                         user = await _db.Users
-                            .FirstOrDefaultAsync(u => u.Email == email && u.Password == password);
+                            .FirstOrDefaultAsync(u => u.Email != null && u.Email.ToLower() == normalizedEmail && u.Password == password);
                         Console.WriteLine($"Query completed. User found: {user != null}");
                     }
                     catch (Exception queryEx)
@@ -142,14 +144,14 @@ namespace Backend.Controllers
                 }
 
                 // If manager credentials are used but user doesn't exist, create it automatically
-                if (user == null && email == "manager@shiftly.com" && password == "manager123")
+                if (user == null && string.Equals(email, PrimaryManagerEmail, StringComparison.OrdinalIgnoreCase) && password == "manager123")
                 {
                     Console.WriteLine("Manager credentials detected but user doesn't exist. Creating manager user...");
                     try
                     {
                         user = new User
                         {
-                            Email = "manager@shiftly.com",
+                            Email = PrimaryManagerEmail,
                             FullName = "Default Manager",
                             Password = "manager123"
                         };
@@ -167,16 +169,10 @@ namespace Backend.Controllers
                     }
                 }
 
-                // CRITICAL: Only manager@shiftly.com with manager123 can be a Manager
-                // All other users (including Users table entries) should be treated as Workers/Employees
-                bool isManagerCredentials = email == "manager@shiftly.com" && password == "manager123";
-                
-                // If it's manager credentials, ONLY check Users table, don't check Employees
-                if (isManagerCredentials)
+                // Any account saved in Users is a manager account.
+                if (user != null)
                 {
-                    if (user != null)
-                {
-                    // Manager login - only for manager@shiftly.com/manager123
+                    // Manager login
                     var claims = new List<Claim>
                     {
                         new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()),
@@ -199,39 +195,25 @@ namespace Backend.Controllers
                         authProperties);
 
                         Console.WriteLine($"✓✓✓ MANAGER LOGIN SUCCESS - User ID: {user.UserId}, Email: {user.Email}");
-                    return Ok(new
-                    {
-                        success = true,
-                        user = new
+                        return Ok(new
                         {
-                            userId = user.UserId,
-                            fullName = user.FullName,
-                            email = user.Email,
-                            role = "Manager",
-                            userType = "Manager"
-                        }
-                    });
-                    }
-                    else
-                    {
-                        // Manager credentials but user not found - already tried to create above
-                        Console.WriteLine("✗✗✗ Manager credentials provided but user not found and creation failed");
-                        return Unauthorized(new { success = false, error = "Invalid email or password" });
-                    }
-                }
-                else if (user != null && !isManagerCredentials)
-                {
-                    // User exists in Users table but is NOT manager credentials
-                    // Treat them as a Worker/Employee instead
-                    Console.WriteLine($"User {user.Email} found in Users table but not manager credentials. Treating as Worker.");
-                    // Continue to employee lookup below - don't log them in as manager
-                    user = null;
+                            success = true,
+                            user = new
+                            {
+                                userId = user.UserId,
+                                fullName = user.FullName,
+                                email = user.Email,
+                                role = "Manager",
+                                userType = "Manager",
+                                isPrimaryManager = string.Equals(user.Email, PrimaryManagerEmail, StringComparison.OrdinalIgnoreCase)
+                            }
+                        });
                 }
 
-                // Check if it's an employee - ONLY if NOT manager credentials
+                // Check if it's an employee when no manager matched.
                 Employee? employee = null;
 
-                if (!isManagerCredentials)
+                if (user == null)
                 {
                     try
                     {
@@ -517,7 +499,7 @@ namespace Backend.Controllers
             {
                 // Check if manager already exists
                 var existingManager = await _db.Users
-                    .Where(u => u.Email == "manager@shiftly.com")
+                    .Where(u => u.Email != null && u.Email.ToLower() == PrimaryManagerEmail.ToLower())
                     .OrderBy(u => u.UserId)
                     .FirstOrDefaultAsync();
                 if (existingManager != null)
@@ -537,7 +519,7 @@ namespace Backend.Controllers
 
                 var manager = new User
                 {
-                    Email = "manager@shiftly.com",
+                    Email = PrimaryManagerEmail,
                     FullName = "Default Manager",
                     Password = "manager123"
                 };
@@ -728,7 +710,8 @@ namespace Backend.Controllers
                         fullName = user.FullName,
                         email = user.Email,
                         role = "Manager",
-                        userType = "Manager"
+                        userType = "Manager",
+                        isPrimaryManager = string.Equals(user.Email, PrimaryManagerEmail, StringComparison.OrdinalIgnoreCase)
                     });
                 }
 

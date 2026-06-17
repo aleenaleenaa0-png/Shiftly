@@ -23,6 +23,8 @@ namespace Backend
 {
     public class Program
     {
+        private const string PrimaryManagerEmail = "manager@Shiftly.com";
+
         public static async Task Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
@@ -139,16 +141,16 @@ namespace Backend
                         try
                         {
                             // حساب المدير الافتراضي للاختبار الأول
-                            if (!await db.Users.AnyAsync())
+                            if (!await db.Users.AnyAsync(u => u.Email != null && u.Email.ToLower() == PrimaryManagerEmail.ToLower()))
                             {
                                 db.Users.Add(new User
                                 {
-                                    Email = "manager@shiftly.com",
+                                    Email = PrimaryManagerEmail,
                                     FullName = "Default Manager",
                                     Password = "manager123"
                                 });
                                 await db.SaveChangesAsync();
-                                Console.WriteLine("✓ Created default manager (manager@shiftly.com / manager123)");
+                                Console.WriteLine($"✓ Created primary manager ({PrimaryManagerEmail} / manager123)");
                             }
                         }
                         catch (Exception managerEx)

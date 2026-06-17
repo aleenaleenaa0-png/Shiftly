@@ -48,6 +48,176 @@ namespace Backend.Services
             }
         }
 
+        public static List<Dictionary<string, object?>> ListUsers(string? connectionString)
+        {
+            var list = new List<Dictionary<string, object?>>();
+            var oledb = ShiftBootstrap.NormalizeOleDbConnectionString(connectionString);
+            try
+            {
+                EnsureUsersTable(connectionString);
+                using var conn = new OleDbConnection(oledb);
+                conn.Open();
+
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT [UserId], [Email], [FullName] FROM [Users] ORDER BY [UserId]";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    list.Add(new Dictionary<string, object?>
+                    {
+                        ["UserId"] = reader.GetInt32(0),
+                        ["Email"] = reader.IsDBNull(1) ? "" : reader.GetString(1),
+                        ["FullName"] = reader.IsDBNull(2) ? "" : reader.GetString(2)
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠ ListUsers: {ex.Message}");
+                throw;
+            }
+            return list;
+        }
+
+        public static Dictionary<string, object?>? GetUserById(string? connectionString, int userId)
+        {
+            var oledb = ShiftBootstrap.NormalizeOleDbConnectionString(connectionString);
+            try
+            {
+                EnsureUsersTable(connectionString);
+                using var conn = new OleDbConnection(oledb);
+                conn.Open();
+
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT [UserId], [Email], [FullName] FROM [Users] WHERE [UserId] = ?";
+                cmd.Parameters.AddWithValue("@id", userId);
+                using var reader = cmd.ExecuteReader();
+                if (!reader.Read()) return null;
+
+                return new Dictionary<string, object?>
+                {
+                    ["UserId"] = reader.GetInt32(0),
+                    ["Email"] = reader.IsDBNull(1) ? "" : reader.GetString(1),
+                    ["FullName"] = reader.IsDBNull(2) ? "" : reader.GetString(2)
+                };
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠ GetUserById: {ex.Message}");
+                throw;
+            }
+        }
+
+        public static bool UserEmailExists(string? connectionString, string email, int? exceptUserId = null)
+        {
+            var oledb = ShiftBootstrap.NormalizeOleDbConnectionString(connectionString);
+            try
+            {
+                EnsureUsersTable(connectionString);
+                using var conn = new OleDbConnection(oledb);
+                conn.Open();
+
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = exceptUserId.HasValue
+                    ? "SELECT COUNT(*) FROM [Users] WHERE LCase([Email]) = LCase(?) AND [UserId] <> ?"
+                    : "SELECT COUNT(*) FROM [Users] WHERE LCase([Email]) = LCase(?)";
+                cmd.Parameters.AddWithValue("@email", email.Trim());
+                if (exceptUserId.HasValue)
+                    cmd.Parameters.AddWithValue("@id", exceptUserId.Value);
+
+                return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠ UserEmailExists: {ex.Message}");
+                throw;
+            }
+        }
+
+        public static int InsertUser(string? connectionString, string email, string fullName, string password)
+        {
+            var oledb = ShiftBootstrap.NormalizeOleDbConnectionString(connectionString);
+            try
+            {
+                EnsureUsersTable(connectionString);
+                using var conn = new OleDbConnection(oledb);
+                conn.Open();
+
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "INSERT INTO [Users] ([Email], [FullName], [Password]) VALUES (?, ?, ?)";
+                cmd.Parameters.AddWithValue("@email", email.Trim());
+                cmd.Parameters.AddWithValue("@fullName", fullName.Trim());
+                cmd.Parameters.AddWithValue("@password", password.Trim());
+                cmd.ExecuteNonQuery();
+
+                using var idCmd = conn.CreateCommand();
+                idCmd.CommandText = "SELECT @@IDENTITY";
+                return Convert.ToInt32(idCmd.ExecuteScalar());
+            }
+            catch (Exception ex)
+            {
+                var detail = ex.InnerException?.Message ?? ex.Message;
+                Console.WriteLine($"❌ InsertUser failed: {detail}");
+                throw new InvalidOperationException($"Could not insert manager into Access: {detail}", ex);
+            }
+        }
+
+        public static bool UpdateUser(string? connectionString, int userId, string fullName, string? password)
+        {
+            var oledb = ShiftBootstrap.NormalizeOleDbConnectionString(connectionString);
+            try
+            {
+                EnsureUsersTable(connectionString);
+                using var conn = new OleDbConnection(oledb);
+                conn.Open();
+
+                using var cmd = conn.CreateCommand();
+                if (string.IsNullOrWhiteSpace(password))
+                {
+                    cmd.CommandText = "UPDATE [Users] SET [FullName] = ? WHERE [UserId] = ?";
+                    cmd.Parameters.AddWithValue("@fullName", fullName.Trim());
+                    cmd.Parameters.AddWithValue("@id", userId);
+                }
+                else
+                {
+                    cmd.CommandText = "UPDATE [Users] SET [FullName] = ?, [Password] = ? WHERE [UserId] = ?";
+                    cmd.Parameters.AddWithValue("@fullName", fullName.Trim());
+                    cmd.Parameters.AddWithValue("@password", password.Trim());
+                    cmd.Parameters.AddWithValue("@id", userId);
+                }
+
+                return cmd.ExecuteNonQuery() > 0;
+            }
+            catch (Exception ex)
+            {
+                var detail = ex.InnerException?.Message ?? ex.Message;
+                Console.WriteLine($"❌ UpdateUser failed: {detail}");
+                throw new InvalidOperationException($"Could not update manager in Access: {detail}", ex);
+            }
+        }
+
+        public static bool DeleteUser(string? connectionString, int userId)
+        {
+            var oledb = ShiftBootstrap.NormalizeOleDbConnectionString(connectionString);
+            try
+            {
+                EnsureUsersTable(connectionString);
+                using var conn = new OleDbConnection(oledb);
+                conn.Open();
+
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "DELETE FROM [Users] WHERE [UserId] = ?";
+                cmd.Parameters.AddWithValue("@id", userId);
+                return cmd.ExecuteNonQuery() > 0;
+            }
+            catch (Exception ex)
+            {
+                var detail = ex.InnerException?.Message ?? ex.Message;
+                Console.WriteLine($"❌ DeleteUser failed: {detail}");
+                throw new InvalidOperationException($"Could not delete manager from Access: {detail}", ex);
+            }
+        }
+
         public static void EnsureEmployeeAuthColumns(string? connectionString)
         {
             var oledb = ShiftBootstrap.NormalizeOleDbConnectionString(connectionString);

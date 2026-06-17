@@ -1,25 +1,49 @@
 using Backend.Models;
+using Backend.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace Backend.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize(Roles = "Manager")]
     public class UsersController : ControllerBase
     {
-        private readonly AppData _db;
+        private const string PrimaryManagerEmail = "manager@Shiftly.com";
+        private readonly IConfiguration _config;
 
-        public UsersController(AppData db) => _db = db;
+        public UsersController(IConfiguration config)
+        {
+            _config = config;
+        }
+
+        private string ConnectionString => ShiftBootstrap.NormalizeOleDbConnectionString(
+            _config.GetConnectionString("ShiftlyConnection") ?? DatabasePaths.DefaultConnectionString);
+
+        private bool IsPrimaryManager()
+        {
+            var email = User.FindFirst(ClaimTypes.Email)?.Value;
+            return string.Equals(email, PrimaryManagerEmail, StringComparison.OrdinalIgnoreCase);
+        }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<object>>> GetUsers()
+        public ActionResult<IEnumerable<object>> GetUsers()
         {
+            if (!IsPrimaryManager())
+                return Forbid();
+
             try
             {
-                var users = await _db.Users
-                    .Select(u => new { u.UserId, u.Email, u.FullName })
-                    .ToListAsync();
+                var users = AccessSchemaHelper.ListUsers(ConnectionString)
+                    .Select(u => new
+                    {
+                        UserId = u["UserId"],
+                        Email = u["Email"],
+                        FullName = u["FullName"]
+                    })
+                    .ToList();
                 return Ok(users);
             }
             catch (Exception ex)
@@ -29,69 +53,76 @@ namespace Backend.Controllers
         }
 
         [HttpGet("{id}")]
-        public async Task<ActionResult<object>> GetUser(int id)
+        public ActionResult<object> GetUser(int id)
         {
-            var user = await _db.Users.FindAsync(id);
+            if (!IsPrimaryManager())
+                return Forbid();
+
+            var user = AccessSchemaHelper.GetUserById(ConnectionString, id);
             if (user == null) return NotFound(new { error = "User not found" });
-            return Ok(new { user.UserId, user.Email, user.FullName });
+            return Ok(new { UserId = user["UserId"], Email = user["Email"], FullName = user["FullName"] });
         }
 
         [HttpPost]
-        public async Task<ActionResult<object>> CreateUser([FromBody] CreateUserDto dto)
+        public ActionResult<object> CreateUser([FromBody] CreateUserDto dto)
         {
+            if (!IsPrimaryManager())
+                return Forbid();
+
             if (dto == null)
                 return BadRequest(new { error = "Request body is required" });
             if (string.IsNullOrWhiteSpace(dto.Email) || string.IsNullOrWhiteSpace(dto.FullName) || string.IsNullOrWhiteSpace(dto.Password))
                 return BadRequest(new { error = "Email, full name, and password are required" });
 
-            if (await _db.Users.AnyAsync(u => u.Email == dto.Email.Trim()))
+            if (AccessSchemaHelper.UserEmailExists(ConnectionString, dto.Email))
                 return Conflict(new { error = "Email already registered" });
 
-            var newUser = new User
-            {
-                Email = dto.Email.Trim(),
-                FullName = dto.FullName.Trim(),
-                Password = dto.Password.Trim()
-            };
-            _db.Users.Add(newUser);
-            await _db.SaveChangesAsync();
+            var newUserId = AccessSchemaHelper.InsertUser(
+                ConnectionString,
+                dto.Email,
+                dto.FullName,
+                dto.Password);
 
             return Ok(new
             {
                 success = true,
                 message = "User created successfully",
-                user = new { newUser.UserId, newUser.Email, newUser.FullName }
+                user = new { UserId = newUserId, Email = dto.Email.Trim(), FullName = dto.FullName.Trim() }
             });
         }
 
         [HttpPut("{id}")]
-        public async Task<ActionResult<object>> UpdateUser(int id, [FromBody] UpdateUserDto dto)
+        public ActionResult<object> UpdateUser(int id, [FromBody] UpdateUserDto dto)
         {
+            if (!IsPrimaryManager())
+                return Forbid();
+
             if (dto == null) return BadRequest(new { error = "Request body is required" });
-            var user = await _db.Users.FindAsync(id);
+            var user = AccessSchemaHelper.GetUserById(ConnectionString, id);
             if (user == null) return NotFound(new { error = "User not found" });
 
-            if (!string.IsNullOrWhiteSpace(dto.FullName))
-                user.FullName = dto.FullName.Trim();
-            if (!string.IsNullOrWhiteSpace(dto.Password))
-                user.Password = dto.Password.Trim();
+            var fullName = string.IsNullOrWhiteSpace(dto.FullName)
+                ? user["FullName"]?.ToString() ?? ""
+                : dto.FullName.Trim();
 
-            await _db.SaveChangesAsync();
+            AccessSchemaHelper.UpdateUser(ConnectionString, id, fullName, dto.Password);
             return Ok(new
             {
                 success = true,
                 message = "User updated successfully",
-                user = new { user.UserId, user.Email, user.FullName }
+                user = new { UserId = user["UserId"], Email = user["Email"], FullName = fullName }
             });
         }
 
         [HttpDelete("{id}")]
-        public async Task<ActionResult> DeleteUser(int id)
+        public ActionResult DeleteUser(int id)
         {
-            var user = await _db.Users.FindAsync(id);
+            if (!IsPrimaryManager())
+                return Forbid();
+
+            var user = AccessSchemaHelper.GetUserById(ConnectionString, id);
             if (user == null) return NotFound(new { error = "User not found" });
-            _db.Users.Remove(user);
-            await _db.SaveChangesAsync();
+            AccessSchemaHelper.DeleteUser(ConnectionString, id);
             return Ok(new { success = true, message = "User deleted successfully" });
         }
     }
