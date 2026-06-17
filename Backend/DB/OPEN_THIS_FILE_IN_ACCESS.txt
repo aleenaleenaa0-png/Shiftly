@@ -9,7 +9,7 @@ C:\Project\Shiftly\Backend\DB\ShiftlyDB.accdb
 
 
 
-Employees in database right now: 7
+Employees in database right now: 8
 
 
 
